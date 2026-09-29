@@ -1,0 +1,4 @@
+[submodule "third_party/isaaclab-arena"]
+	path = third_party/isaaclab-arena
+	url = https://github.com/isaac-sim/IsaacLab-Arena.git
+	branch = release/0.3.0
