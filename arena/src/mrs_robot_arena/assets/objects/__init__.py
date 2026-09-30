@@ -1,0 +1,1 @@
+"""Reusable interactive object assets."""
