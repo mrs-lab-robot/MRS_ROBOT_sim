@@ -65,6 +65,7 @@ def main() -> int:
     app = SimulationApp({"headless": True})
     try:
         from pxr import Usd
+        from normalize_usd_negative_scale import normalize_usd_negative_scale
 
         stage = Usd.Stage.Open(str(args.source))
         if stage is None:
@@ -84,6 +85,8 @@ def main() -> int:
             if path in MOUNT_POSES:
                 _set_mount_pose(stage, path, MOUNT_POSES[path])
 
+        normalized_ops, transformed_meshes = normalize_usd_negative_scale(stage)
+
         args.output.parent.mkdir(parents=True, exist_ok=True)
         flat = stage.Flatten()
         flat.Export(str(args.output))
@@ -100,6 +103,8 @@ def main() -> int:
         print(f"exported={args.output}")
         print(f"removed={len(removed)}")
         print(f"mounts_created={len(created)}")
+        print(f"negative_scale_ops_normalized={normalized_ops}")
+        print(f"meshes_transformed={transformed_meshes}")
         print(f"camera_or_lidar_remaining={len(remaining)}")
         return 0
     finally:

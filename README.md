@@ -1,35 +1,54 @@
 # MRS_ROBOT_sim
 
-OpenFleX 的独立 Isaac Sim 6.0 + ROS 2 Humble 仿真仓库。机器人仿真资产、六个 ROS 2 包、
-接口合同、测试和运行报告都在本仓库维护，不再把仿真源码拼接到 `openflex_ws/src`。
+OpenFleX 的 Isaac Sim 6.0 + ROS 2 Humble 仿真仓库。仿真资产、ROS 2 包、接口合同、Isaac Lab 扩展、
+Arena benchmark、测试和运行报告统一维护在本仓库；仿真源码不放入 `openflex_ws/src`。
+
+代码按 `sim_runtime → isaaclab_ext → arena_benchmark` 分层：底层维护机器人/传感器/ROS 运行时，
+中层适配 Isaac Lab 的 articulation、actions、observations 与 smoke，顶层只组合 Arena Embodiment、
+Scene、Task 和评测。三层仍在一个 Git 仓库中。ROS 2 使用 Humble/Python 3.10，Isaac Sim/Arena
+目标运行时使用 Python 3.12，二者隔离；Arena 每步直接控制仿真 articulation，不通过 ROS 转发。
+上游 Arena 子模块的唯一 canonical 路径为 `third_party/IsaacLab-Arena`。
+
+为兼容既有 GUI/launch，旧路径 `isaac_sim_core/`、`ros2_pkgs/openflex_isaac_sim/` 和 `arena/`
+保留为指向新目录的符号链接；新代码和文档应使用 canonical 路径。
 
 ## 与 OpenFleX 控制中心协作部署
 
-`MRS_ROBOT_sim` 是独立维护、独立构建的 Isaac Sim + ROS 2 仿真仓库；GUI 只通过 ROS 2 launch 和 topic/消息合同调用它。
-推荐在集成目录中与 `openflex_ws` 并列放置，**不要放进 `openflex_ws/src`**：
+`MRS_ROBOT_sim` 与 `openflex_ws` 分别构建；Arena 源码随本仓库维护。推荐在集成目录中与
+`openflex_ws` 并列放置，**不要把本仓库或 Arena 放进 `openflex_ws/src`**：
 
 ```text
-openflex_all/                 # 集成目录；当前阶段不把仿真仓库提交进主仓库
+openflex_all/                 # 集成部署目录
 ├── openflex_ws/              # GUI、真机 ROS 包及仿真所需 underlay
-├── MRS_ROBOT_sim/              # Isaac Sim + ROS 仿真运行时，独立提交和发布
-└── MRS_ROBOT_arena/            # Arena 原生任务和策略评测，独立提交和发布
+└── MRS_ROBOT_sim/             # 仿真运行时、ROS 包与 Arena 扩展
+    ├── sim_runtime/
+    ├── isaaclab_ext/
+    └── arena_benchmark/
 ```
 
-当前阶段不使用主仓库分支或 submodule。部署成员应从团队确认的 Isaac 仿真仓库地址单独克隆；
-团队仓库地址为 `git@github.com:mrs-lab-robot/MRS_ROBOT_sim.git`。本地 `origin` 应指向该团队仓库；
-原 `goudan009/isaacsim_robot` 地址仅作为迁移来源保留，不再用于新的部署。集成目录的主仓库
-不要执行 `git add .` 来收录这个嵌套仓库。若未来需要让主仓库锁定已验收的仿真版本，再由双方维护者
-评估 Git submodule；届时主仓库只记录仿真仓库 URL 和提交 SHA，不复制仿真源码或历史。
+部署时只需克隆本仓库并初始化 Arena 上游子模块；不再单独克隆 `MRS_ROBOT_arena`。外层真机工作区
+仍可独立维护，GUI 通过 ROS 2 launch 与 topic/消息合同连接本仓库。
 
 ```bash
 export OPENFLEX_ALL_ROOT=/绝对路径/openflex_all
 export OPENFLEX_WS_ROOT="$OPENFLEX_ALL_ROOT/openflex_ws"
 export ISAACSIM_ROBOT_ROOT="$OPENFLEX_ALL_ROOT/MRS_ROBOT_sim"  # 兼容保留的变量名
+export MRS_ARENA_ROOT="$ISAACSIM_ROBOT_ROOT/arena"
 export ISAACSIM_PATH=/绝对路径/isaacsim-6.0
 export ISAACSIM_GIT_URL=git@github.com:mrs-lab-robot/MRS_ROBOT_sim.git
 
 git clone "$ISAACSIM_GIT_URL" "$ISAACSIM_ROBOT_ROOT"
+cd "$ISAACSIM_ROBOT_ROOT"
+git submodule update --init third_party/IsaacLab-Arena
 ```
+
+若已克隆但未初始化 Arena 上游源码，在仓库根目录运行：
+
+```bash
+git submodule update --init third_party/IsaacLab-Arena
+```
+
+此命令不会下载上游仓库中可选的 Isaac Lab 或 GR00T 源码子模块；只有切换到源码开发依赖组时才需要单独初始化它们。
 
 上面的路径只是示例，按每台机器的实际目录修改。**GUI 所填的软件路径属于所选运行目标**：
 选择本机时填本机路径；选择 SSH 工作站时，仿真仓库、OpenFleX 工作区、ROS 和 Isaac Sim
@@ -75,12 +94,15 @@ GUI 启动合同目前要求：
 
 ```text
 MRS_ROBOT_sim/
-├── isaac_sim_core/                  # USD、场景、机器人和传感器 canonical 配置
-├── ros2_pkgs/openflex_isaac_sim/    # 六个 ROS 2 包
-├── config/dependencies.repos        # 固定版本的第三方源码依赖
+├── sim_runtime/                     # USD、场景、传感器、ROS 2 与通用遥操作
+├── isaaclab_ext/                    # MRS Robot 的 Isaac Lab 接口与 smoke
+├── arena_benchmark/                 # Arena Embodiment、场景、任务与评测扩展
+├── third_party/IsaacLab-Arena/      # 固定版本的上游 Arena 子模块，只读
+├── configs/versions.yaml            # 全局运行时版本锁
+├── config/dependencies.repos        # 固定版本的 ROS 第三方源码依赖
 ├── docs/                            # 架构、运行和性能边界
 ├── reports/                         # 可审阅的迁移、性能和运行证据
-├── test/                            # 静态、ROS 2 集成和性能测试
+├── tests/                            # 分层测试；历史 runtime suite 暂留 test/
 └── tools/                           # 资产和模型工具
 ```
 
@@ -101,6 +123,9 @@ ROS 2 包包括 `openflex_isaac_description`、`openflex_isaac_contract`、
 `isaac_ros2_utils` 已固定在 `config/dependencies.repos` 中。不要把它的嵌套 `.git` 目录提交到
 本仓库。OpenFleX 主工作空间可以作为 underlay，但仿真源码只维护在本仓库。
 
+Arena 使用 Python 3.12/Isaac Sim 6 的独立运行环境，与 ROS Humble/Python 3.10 隔离。原生安装、
+运行和 OpenFlex smoke 命令见 [Arena 中文说明](arena_benchmark/README_CN.md)；该环境不属于 ROS `colcon` 工作区。
+
 ## 获取依赖
 
 ```bash
@@ -108,6 +133,7 @@ export OPENFLEX_ALL_ROOT=/绝对路径/openflex_all
 export OPENFLEX_WS_ROOT="$OPENFLEX_ALL_ROOT/openflex_ws"
 export ISAACSIM_ROBOT_ROOT="$OPENFLEX_ALL_ROOT/MRS_ROBOT_sim"
 cd "$ISAACSIM_ROBOT_ROOT"
+git submodule update --init third_party/IsaacLab-Arena
 mkdir -p .deps/src
 vcs import .deps/src < config/dependencies.repos
 ```
@@ -124,8 +150,11 @@ cd "$ISAACSIM_ROBOT_ROOT"
 source /opt/ros/humble/setup.bash
 source "$OPENFLEX_WS_ROOT/install/setup.bash"
 
-colcon build --symlink-install \
-  --base-paths ros2_pkgs/openflex_isaac_sim \
+colcon --log-base log/isaacsim6 build \
+  --build-base build/isaacsim6 \
+  --install-base install \
+  --symlink-install \
+  --base-paths sim_runtime/ros2/openflex_isaac_sim \
   --allow-overriding \
     openflex_isaac_bridge \
     openflex_isaac_bringup \
@@ -135,6 +164,15 @@ colcon build --symlink-install \
     openflex_isaac_sensors
 
 source install/setup.bash
+```
+
+Arena 的 VR ROS relay 是独立 ROS 包，可在完成本仓库和 OpenFleX underlay 构建后单独构建：
+
+```bash
+colcon --log-base arena_benchmark/integrations/ros2/log build \
+  --base-paths arena_benchmark/integrations/ros2/mrs_robot_arena_bridge \
+  --build-base arena_benchmark/integrations/ros2/build \
+  --install-base arena_benchmark/integrations/ros2/install
 ```
 
 独立仓库必须最后 source，确保六个 `openflex_isaac_*` 包解析到本仓库的 `install/`。
@@ -154,21 +192,28 @@ source install/setup.bash
 export ISAACSIM_ROBOT_ROOT="$PWD"
 export ROS_DOMAIN_ID=49
 export ROS_LOCALHOST_ONLY=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+unset ROS_DISCOVERY_SERVER
 
 ros2 launch openflex_isaac_bringup sim.launch.py \
-  headless:=true \
+  headless:=false \
   render_hz:=30 \
   physics_hz:=120 \
-  sensor_profile:=full \
+  sensor_profile:=none \
   lidar_transport:=helper \
   lidar_mount_mode:=parented \
   lidar_object_id_map:=false \
-  livox_max_points:=15000 \
   start_upper_body:=true \
   isaac_path:="$ISAACSIM_PATH" \
   api_port:=8085 \
   ros_domain_id:=49
 ```
+
+`sim.launch.py` defaults to local-only ROS discovery and clears an inherited
+`FASTRTPS_DEFAULT_PROFILES_FILE`, so remote same-domain nodes cannot inject
+commands into the local simulation. For an intentional remote-control setup,
+pass both `ros_localhost_only:=0` and
+`fastdds_profiles_file:=/path/to/profile.xml`.
 
 主 launch 不启动 RViz。第二个终端使用相同的 ROS 环境后运行：
 
@@ -214,8 +259,25 @@ RViz 使用 `/livox/lidar_points`。需要 Livox CustomMsg 的 FAST-LIO 使用 `
 
 ## 验证
 
+以下分层测试不启动 Isaac Sim；Arena 相关用例需要锁定 Python 环境中的 Torch，录制写盘测试还需要 `h5py`：
+
 ```bash
-python3 -m pytest -q test
+PYTHONPATH=isaaclab_ext/src:sim_runtime/teleoperation/src:sim_runtime/ros2/mrs_robot_arena_bridge:arena_benchmark/src \
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q \
+  tests/migration isaaclab_ext/tests tests/sim_runtime/teleoperation arena_benchmark/tests/unit
+```
+
+`isaaclab_ext/scripts/test_joint_control.py`、`test_camera.py`、`test_actions.py`、
+`arena_benchmark/scripts/smoke_openflex.py`、`smoke_openflex_cameras.py` 和 `smoke_openflex_pick_cube.py` 会启动 Kit，必须在
+`configs/versions.yaml` 锁定的运行时中执行；Arena 相机验收需传 `--enable_cameras`。
+当前 host 的纯 Python 结果不能代替这些 Isaac Sim/ROS 集成验收。
+
+ROS 2 launch、controller 和传感器运行测试仍位于历史 `test/` 目录，在 source ROS Humble 与 OpenFleX
+underlay、构建本仓库 `install/` 后执行：
+
+```bash
+PYTHONPATH=isaaclab_ext/src:sim_runtime/teleoperation/src:sim_runtime/ros2/mrs_robot_arena_bridge:arena_benchmark/src \
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q test
 
 source install/setup.bash
 ros2 run openflex_isaac_contract verify_embodiment_contract.py
@@ -236,6 +298,9 @@ ros2 run openflex_isaac_bringup verify_camera_images.py
 ## 详细文档
 
 - `docs/ARCHITECTURE_CN.md`
+- `sim_runtime/README.md`
+- `isaaclab_ext/README.md`
+- `arena_benchmark/README_CN.md`
 - `docs/RUNTIME_PERFORMANCE_CN.md`
 - `docs/REPORTING_CN.md`
 - `ros2_pkgs/openflex_isaac_sim/openflex_isaac_bringup/README.md`

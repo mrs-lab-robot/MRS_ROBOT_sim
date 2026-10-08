@@ -1,0 +1,16 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Sphere "Waypoint"
+    {
+        double radius = 0.07
+        color3f[] primvars:displayColor = [(1.0, 0.72, 0.05)]
+        token primvars:displayColor:interpolation = "constant"
+    }
+}

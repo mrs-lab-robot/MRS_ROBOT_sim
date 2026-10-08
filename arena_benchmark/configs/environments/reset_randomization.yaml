@@ -1,0 +1,12 @@
+# Optional reset randomization ranges keyed by the upstream scene/task YAML IDs.
+# These declarations are first-party; the upstream IsaacLab-Arena YAMLs stay read-only.
+version: 1
+scenes:
+  robolab/scenes/banana_bowl:
+    objects:
+      banana:
+        position_xy_m: [-0.02, 0.02]
+        yaw_deg: [-15, 15]
+    light:
+      prim_path: /World/Light
+      intensity: [1000, 1800]

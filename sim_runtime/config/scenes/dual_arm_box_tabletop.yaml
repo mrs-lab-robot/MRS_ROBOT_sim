@@ -1,0 +1,31 @@
+spec_version: "1.0"
+scene_id: dual_arm_box_tabletop
+description: Draft tabletop scene for fixed-base bilateral box transport.
+base_stage_usd: ../../ros2/openflex_isaac_sim/openflex_isaac_bringup/config/empty_stage.usd
+robot_spawn_pose:
+  position: [0.0, 0.0, 0.0]
+  rotation: [0.0, 0.0, 0.0, 1.0]
+objects:
+  - object_id: tabletop
+    object_type: table
+    usd_path: ../../assets/environments/openflex_tabletop.usda
+    position: [0.85, 0.0, 0.0]
+    rotation: [0.0, 0.0, 0.0, 1.0]
+    scale: [1.0, 1.0, 1.0]
+    physics: {mass: 0.0}
+    semantic_label: support_surface
+  - object_id: transport_box
+    object_type: rigid_box
+    usd_path: ../../assets/environments/openflex_pick_cube.usda
+    position: [0.65, 0.0, 0.80]
+    rotation: [0.0, 0.0, 0.0, 1.0]
+    scale: [2.0, 2.0, 2.0]
+    physics: {mass: 0.08}
+    semantic_label: task_object
+lighting:
+  randomization_supported: false
+metadata:
+  readiness: draft_requires_reachability_collision_and_grasp_validation
+  notes: >-
+    Asset references and nominal placement are configured, not physically
+    validated. Keep the robot base fixed for the bilateral transport task.

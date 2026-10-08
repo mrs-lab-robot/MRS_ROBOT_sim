@@ -1,0 +1,42 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Cube "TargetBoxFront" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "SemanticsLabelsAPI:class"]
+    )
+    {
+        token[] semantics:labels:class = ["obstacle"]
+        double3 xformOp:translate = (5, 0, 1)
+        double3 xformOp:scale = (0.75, 0.75, 1)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(0.8, 0.2, 0.1)]
+    }
+
+    def Cube "TargetBoxSide" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "SemanticsLabelsAPI:class"]
+    )
+    {
+        token[] semantics:labels:class = ["obstacle"]
+        double3 xformOp:translate = (0, 6, 1.5)
+        double3 xformOp:scale = (1, 1, 1.5)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(0.1, 0.5, 0.85)]
+    }
+
+    def Cube "TargetWall" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "SemanticsLabelsAPI:class"]
+    )
+    {
+        token[] semantics:labels:class = ["wall"]
+        double3 xformOp:translate = (10, 0, 2.5)
+        double3 xformOp:scale = (0.25, 8, 2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(0.55, 0.55, 0.55)]
+    }
+}

@@ -24,13 +24,14 @@ class RobotControlLaunchTest(unittest.TestCase):
         self.assertIn('default_value="none"', text)
         self.assertIn('choices=["none"]', text)
         self.assertNotIn('executable="camera_contract_publisher.py"', text)
-        self.assertNotIn('executable="isaacsim_compat_bridge.py"', text)
+        self.assertIn('executable="isaacsim_compat_bridge.py"', text)
+        self.assertIn('"sensor_only_mode": True', text)
         self.assertIn('"enable_sensors": False', text)
         self.assertIn('RobotSensorRuntime(', start_text)
         self.assertIn('_RUNTIME_SENSOR_MANAGER.mark_ready(error=sensor_catalog_error)', start_text)
         self.assertNotIn('create_robot_sensor_suite(', start_text)
         self.assertNotIn('bootstrap_camera_gates(', start_text)
-        self.assertIn('lidar_profile = "MID360_PERFORMANCE"', text)
+        self.assertIn('sensor_profile = "none"', text)
         self.assertIn('default_value="parented"', text)
 
     def test_launch_keeps_rviz_separate_and_starts_vla_contract_bridge(self) -> None:
@@ -39,7 +40,8 @@ class RobotControlLaunchTest(unittest.TestCase):
         self.assertNotIn('package="rviz2"', text)
         self.assertIn('executable="vla_contract_bridge.py"', text)
         self.assertNotIn('executable="camera_contract_publisher.py"', text)
-        self.assertNotIn('executable="isaacsim_compat_bridge.py"', text)
+        self.assertIn('executable="isaacsim_compat_bridge.py"', text)
+        self.assertIn('"livox_lidar_mode": "custom"', text)
         self.assertTrue((BRINGUP / "launch" / "rviz_only.launch.py").is_file())
 
     def test_isaac_startup_enables_multitick_motion_bvh(self) -> None:
@@ -49,13 +51,14 @@ class RobotControlLaunchTest(unittest.TestCase):
         self.assertIn('"--/renderer/raytracingMotion/enabled=true"', text)
         self.assertIn('"--/renderer/multiGpu/enabled=false"', text)
 
-    def test_mid360_profiles_keep_dense_firing_rates(self) -> None:
+    def test_mid360_profile_keeps_variant_cadence_and_performance_limits(self) -> None:
         text = (SENSORS / "openflex_isaac_sensors" / "mid360.py").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn('"omni:sensor:Core:patternFiringRateHz": 20000', text)
-        self.assertIn('"omni:sensor:Core:patternFiringRateHz": 36000', text)
+        self.assertIn('"Profile01_20Hz_0p5deg"', text)
+        self.assertNotIn('"omni:sensor:Core:patternFiringRateHz": 20000', text)
+        self.assertNotIn('"omni:sensor:Core:patternFiringRateHz": 36000', text)
         self.assertIn('"omni:sensor:Core:nearRangeM": 0.1', text)
         self.assertIn('"omni:sensor:Core:farRangeM": 40.0', text)
         self.assertIn('"OPENFLEX_ISAAC_LIDAR_CONFIG", "Example_Rotary"', text)

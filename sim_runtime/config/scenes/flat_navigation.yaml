@@ -1,0 +1,15 @@
+spec_version: "1.0"
+scene_id: flat_navigation
+description: Flat ground scene for base-only point navigation.
+base_stage_usd: ../../ros2/openflex_isaac_sim/openflex_isaac_bringup/config/empty_stage.usd
+robot_spawn_pose:
+  position: [0.0, 0.0, 0.18]
+  rotation: [0.0, 0.0, 0.0, 1.0]
+objects: []
+lighting:
+  randomization_supported: false
+metadata:
+  readiness: asset_configured_physics_not_yet_verified
+  notes: >-
+    This scene provides a flat stage only. Navigation sensors and the robot are
+    brought up by the selected runtime profile.

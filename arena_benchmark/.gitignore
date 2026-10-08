@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.cache/
+.runtime/
+build/
+dist/
+integrations/ros2/build/
+integrations/ros2/install/
+integrations/ros2/log/
+
+# Isaac Sim / Isaac Lab runtime artifacts
+kit/
+logs/
+log/
+*.log
+*.usd.tmp
+*.usdc.tmp
+
+# Experiment artifacts and large assets
+outputs/*
+!outputs/.gitkeep
+datasets/
+checkpoints/
+models/
+videos/
+wandb/
+
+# Local paths, secrets, and machine-specific settings
+.env
+.env.*
+!.env.example
+configs/local/

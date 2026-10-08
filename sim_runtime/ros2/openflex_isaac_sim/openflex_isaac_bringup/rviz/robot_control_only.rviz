@@ -1,0 +1,228 @@
+Panels:
+  - Class: openflex_isaac_bringup/SimulationControlSensorsPanel
+    Name: SimulationControlSensorsPanel
+    Show Cameras: false
+    Show Lidar: false
+    BasePanel:
+      angular_speed_mradps: 200
+      cmd_vel_topic: /cmd_vel
+      linear_speed_mmps: 200
+      speed_scale_percent: 100
+    LiftPanel: {}
+  - Class: openarmx_head_joint_slider_panel/HeadJointSliderPanel
+    Name: HeadJointSliderPanel
+    joint_step_mrad: 10
+    record_targets: -0.068091094493865967,-0.86715447902679443
+  - Class: openarmx_joint_slider_panel/JointSliderPanel
+    Name: JointSliderPanel
+    end_effector_mode: 0
+    gripper_step_tenth_mm: 10
+    joint_step_mrad: 10
+    record_targets: -0.059268023818731308,-0.19545021653175354,0.33009797334671021,1.7563667297363281,-0.30861571431159973,-0.36423942446708679,0.60246235132217407,-0.67918473482131958,0.26795285940170288,-0.076914168894290924,1.7717111110687256,0.10645227879285812,0.21079468727111816,0.37689861655235291,0.0009429113579397443,4.0295358723765163e-05
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset: {X: 0, Y: 0, Z: 0}
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+      Mass Properties: {Inertia: false, Mass: false}
+      Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.25
+      Name: Base Frame
+      Radius: 0.015
+      Reference Frame: base_link
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.18
+      Name: MID360 Frame
+      Radius: 0.012
+      Reference Frame: livox_frame
+      Value: true
+    - Class: rviz_common/Group
+      Displays:
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds: {Max Value: 10, Min Value: -10, Value: true}
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 64; 196; 255
+          Color Transformer: FlatColor
+          Decay Time: 0.25
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: LivoxPointCloud
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.02
+          Style: Flat Squares
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Best Effort
+            Value: /livox/lidar_points
+          Use Fixed Frame: true
+          Use rainbow: false
+          Value: true
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds: {Max Value: 10, Min Value: -10, Value: true}
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/LaserScan
+          Color: 255; 64; 64
+          Color Transformer: FlatColor
+          Decay Time: 0.15000000596046448
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: LaserScan
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 4
+          Size (m): 0.03
+          Style: Flat Squares
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Best Effort
+            Value: /scan
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Class: rviz_default_plugins/Odometry
+          Color: 85; 255; 255
+          Enabled: true
+          Keep: 100
+          Name: Odometry
+          Position Tolerance: 0.05
+          Shape: Arrow
+          Topic:
+            Depth: 10
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /odom
+          Value: true
+        - Alpha: 1
+          Buffer Length: 1
+          Class: rviz_default_plugins/Path
+          Color: 255; 180; 20
+          Enabled: true
+          Head Diameter: 0.3
+          Head Length: 0.2
+          Length: 0.3
+          Line Style: Lines
+          Line Width: 0.03
+          Name: FAST-LIO Estimated Path
+          Offset: {X: 0, Y: 0, Z: 0}
+          Pose Color: 255; 85; 255
+          Pose Style: None
+          Queue Size: 10
+          Shaft Diameter: 0.1
+          Shaft Length: 0.1
+          Topic:
+            Depth: 10
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /fastlio2/lio_path
+          Value: true
+      Enabled: true
+      Name: Sensors
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Transformation:
+    Current: {Class: rviz_default_plugins/TF}
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 12.0
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point: {X: 0, Y: 0, Z: 0.2}
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 1.45
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz)
+      Yaw: 0.0
+    Saved: ~
+Window Geometry:
+  SimulationControlSensorsPanel: {collapsed: false}
+  HeadJointSliderPanel: {collapsed: false}
+  Height: 1400
+  Hide Left Dock: false
+  Hide Right Dock: false
+  JointSliderPanel: {collapsed: false}
+  Width: 1800
+  X: 40
+  Y: 40
+  QMainWindow State: 000000ff00000000fd00000002000000000000000000000000fc0200000001fb0000003a00530069006d0075006c006100740069006f006e0043006f006e00740072006f006c00530065006e0073006f0072007300500061006e0065006c0100000000ffffffff0000002c00ffffff000000010000000000000000fc0200000002fb000000280048006500610064004a006f0069006e00740053006c006900640065007200500061006e0065006c0100000000ffffffff0000002c00fffffffb00000020004a006f0069006e00740053006c006900640065007200500061006e0065006c0100000000ffffffff0000002c00ffffff000000000000000000000004000000040000000800000008fc00000000

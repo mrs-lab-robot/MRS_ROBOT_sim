@@ -7,13 +7,19 @@
 
 ```text
 MRS_ROBOT_sim/
-├── isaac_sim_core/                  # USD、场景、机器人和传感器配置
-├── ros2_pkgs/openflex_isaac_sim/    # 六个 ROS 2 包
-├── config/                          # 可复现第三方依赖
-├── test/                            # 静态、集成和性能测试
+├── sim_runtime/                     # USD、传感器、场景、ROS 2、通用遥操作
+├── isaaclab_ext/                    # mrs_robot_lab：Articulation、Action、Observation、smoke
+├── arena_benchmark/                 # mrs_arena：Embodiment、Scene、Task、Benchmark
+├── third_party/IsaacLab-Arena/      # 固定提交的只读上游子模块
+├── configs/versions.yaml            # 全局运行时版本锁
+├── tests/                           # 分层新测试
+├── test/                            # 历史运行/ROS/performance 测试，兼容期保留
 ├── reports/                         # 迁移、性能和运行证据
 └── tools/                           # 资产与模型工具
 ```
+
+`isaac_sim_core/`、`ros2_pkgs/openflex_isaac_sim/`、`arena/` 和 `arena_benchmark` 内的
+`third_party/isaaclab-arena` 是旧接口兼容符号链接。新代码应依赖 canonical 路径，而不是旧入口。
 
 ## ROS 2 包
 
@@ -34,9 +40,13 @@ MRS_ROBOT_sim/
 ```text
 OpenFleX underlay ──> openflex_isaac_description ──> openflex_isaac_bringup
 isaac_ros2_utils ──> openflex_isaac_controllers ───┘
-isaac_sim_core ────> openflex_isaac_sensors ──────┘
-openflex_isaac_contract ──────────────────────────┘
+sim_runtime ──> isaaclab_ext (mrs_robot_lab) ──> arena_benchmark (mrs_arena)
+      │
+      └── ROS 2 packages ──> OpenFleX underlay / simulator topics
 ```
+
+`sim_runtime` 不依赖 Isaac Lab/Arena；`isaaclab_ext` 不依赖 benchmark；只有 Arena 顶层可以组合下层。
+VR protocol/transport 位于 runtime，绝对关节命令到 Lab action 的适配位于 `mrs_robot_lab`。
 
 OpenFleX underlay 提供机器人基础描述、swerve 控制器和应用层节点。第三方
 `isaac_ros2_utils` 通过 `config/dependencies.repos` 获取，不能把嵌套 `.git` 目录提交进来。
@@ -45,15 +55,15 @@ OpenFleX underlay 提供机器人基础描述、swerve 控制器和应用层节�
 
 | 内容 | 唯一维护位置 |
 | --- | --- |
-| 机器人 USD | `isaac_sim_core/assets/robots/openflex_robot.usda` |
-| 控制器 | `ros2_pkgs/openflex_isaac_sim/openflex_isaac_bringup/config/controllers.isaac.mobile_base.yaml` |
-| 动作/观测合同 | `ros2_pkgs/openflex_isaac_sim/openflex_isaac_contract/config/embodiment.yaml` |
-| RealSense 配置 | `isaac_sim_core/config/sensor_params/realsense/` |
-| MID360 配置 | `isaac_sim_core/config/sensor_params/mid360/` |
-| 传感器 topic 合同 | `isaac_sim_core/config/sensor_params/sensors.isaac.yaml` |
+| 机器人 USD | `sim_runtime/assets/robots/openflex_robot.usda` |
+| 控制器 | `sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_bringup/config/controllers.isaac.mobile_base.yaml` |
+| 动作/观测合同 | `sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract/config/embodiment.yaml` |
+| RealSense 配置 | `sim_runtime/config/sensors/realsense/` |
+| MID360 配置 | `sim_runtime/config/sensors/mid360/` |
+| 传感器 topic 合同 | `sim_runtime/config/sensors/sensors.isaac.yaml` |
 
-`openflex_isaac_sensors/config/` 中的相机配置是 ROS 2 安装副本。修改挂载或标定时必须同步
-canonical 配置并运行测试。
+`openflex_isaac_sensors/config/` 中的 RealSense 配置和 calibration 是指向上表 canonical 文件的符号链接；
+ROS 包安装仍沿用自身的文件名和数据安装规则，不再保留第二份配置副本。
 
 ## 运行数据流
 

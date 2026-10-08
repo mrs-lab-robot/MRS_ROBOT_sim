@@ -35,7 +35,7 @@ class StandaloneComponentsTest(unittest.TestCase):
     def test_standalone_mid360_factory_is_exported(self) -> None:
         self.assertTrue(callable(create_standalone_mid360))
 
-    def test_mid360_helper_matches_historical_playback_graph(self) -> None:
+    def test_mid360_helper_keeps_playback_graph_with_runtime_gate(self) -> None:
         source = (PACKAGE_ROOT / "openflex_isaac_sensors" / "mid360.py").read_text(encoding="utf-8")
         direct_source = source.split("\ndef _create_graph_owned_lidar_graph", 1)[0]
         self.assertIn(
@@ -43,9 +43,14 @@ class StandaloneComponentsTest(unittest.TestCase):
             direct_source,
         )
         self.assertIn(
-            '("OnPlaybackTick.outputs:tick", "PointCloudPublish.inputs:execIn")',
+            '("OnPlaybackTick.outputs:tick", "LidarEnableGate.inputs:execIn")',
             direct_source,
         )
+        self.assertIn(
+            '("LidarEnableGate.outputs:execOut", "PointCloudPublish.inputs:execIn")',
+            direct_source,
+        )
+        self.assertIn('("LidarEnableGate.inputs:step", 0)', direct_source)
         self.assertNotIn(
             '("SimulationFrame", "isaacsim.core.nodes.OgnIsaacRunOneSimulationFrame")',
             direct_source,

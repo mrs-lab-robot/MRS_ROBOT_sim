@@ -1,0 +1,23 @@
+/mrs_robot_arena_relay:
+  ros__parameters:
+    arena_host: "127.0.0.1"
+    command_port: 24102
+    state_port: 24103
+    camera_stream_port: 24104
+    control_rate_hz: 90.0
+    deadman_timeout: 0.25
+    vr_estop_topic: /vr_estop_active
+    left_pose_topic: /pico_left_controller/pose
+    right_pose_topic: /pico_right_controller/pose
+    left_grip_topic: /pico_left_controller/grip
+    right_grip_topic: /pico_right_controller/grip
+    left_trigger_topic: /pico_left_controller/trigger
+    right_trigger_topic: /pico_right_controller/trigger
+    left_joystick_x_topic: /pico_left_controller/joystick_x
+    left_joystick_y_topic: /pico_left_controller/joystick_y
+    right_joystick_x_topic: /pico_right_controller/joystick_x
+    right_joystick_y_topic: /pico_right_controller/joystick_y
+    left_arm_topic: /left_forward_position_controller/commands
+    right_arm_topic: /right_forward_position_controller/commands
+    head_topic: /head_forward_position_controller/commands
+    lift_jog_topic: /lift_manual_position_controller/jog_command

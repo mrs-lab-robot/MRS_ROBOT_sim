@@ -1,0 +1,38 @@
+spec_version: "1.0"
+task_id: dual_arm_box_transport
+description: Fixed-base bilateral grasp, lift, carry, place, release and settle.
+scene_id: dual_arm_box_tabletop
+episode_length_s: 60.0
+success_criteria:
+  - criterion_type: bilateral_box_transport
+    params:
+      object_id: transport_box
+      target_position: [0.90, 0.0, 0.80]
+      min_lift_height: 0.10
+      min_carry_distance: 0.20
+      stable_seconds: 1.0
+      max_linear_speed_mps: 0.02
+      require_both_grippers: true
+    tolerance: 0.05
+    required: true
+initial_state:
+  robot_pose:
+    position: [0.0, 0.0, 0.0]
+    yaw_rad: 0.0
+  box_pose:
+    position: [0.65, 0.0, 0.80]
+    rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+randomization_config:
+  box_xy_m: 0.02
+  box_yaw_rad: 0.1
+supported_backends: [isaac_lab, arena]
+capabilities: [capture, replay, mimic, rl, evaluation]
+required_sensors: [base_camera, head_camera, left_wrist_camera, right_wrist_camera, joint_state, object_state]
+allowed_teleop_modes: [vr, keyboard]
+maturity: draft
+action_spec:
+  name: bilateral_arm_joint_targets
+  units: rad
+  normalized_range: [-1.0, 1.0]
+metadata:
+  readiness: arena_task_registered_mimic_policy_runner_and_physics_acceptance_pending

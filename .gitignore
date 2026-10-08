@@ -2,6 +2,10 @@
 build/
 install/
 log/
+build_*/
+install_*/
+log_*/
+test_results_*/
 .deps/
 /isaac_ros2_utils/
 
@@ -15,14 +19,21 @@ __pycache__/
 coverage.xml
 
 # Isaac Sim and generated assets
+sim_runtime/assets/generated/
 isaac_sim_core/assets/generated/
 *.usd.bak
 *.usda.bak
+
+# Python package/runtime artifacts
+*.egg-info/
+.venv/
+.cache/
 
 # Local reports and runtime logs
 reports/raw/
 reports/**/raw/
 reports/runtime/generated/
+/reports/runtime/visual/
 *.log
 
 # Generated runtime descriptions and local measurement exports

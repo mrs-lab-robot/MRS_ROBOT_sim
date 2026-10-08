@@ -1,0 +1,38 @@
+spec_version: "1.0"
+task_id: navigation_to_goal
+description: Flat-ground base-only navigation to a pose, without obstacle avoidance.
+scene_id: flat_navigation
+episode_length_s: 30.0
+success_criteria:
+  - criterion_type: base_pose_at_target
+    params:
+      target_position: [2.0, 0.0, 0.0]
+      target_yaw_rad: 0.0
+      heading_tolerance_deg: 10.0
+      hold_seconds: 1.0
+    tolerance: 0.15
+    required: true
+initial_state:
+  robot_pose:
+    position: [0.0, 0.0, 0.18]
+    yaw_rad: 0.0
+randomization_config:
+  robot_xy_m: 0.0
+  robot_yaw_rad: 0.0
+supported_backends: [isaac_lab, arena]
+capabilities: [capture, replay, rl, evaluation]
+required_sensors: [base_camera, odom]
+allowed_teleop_modes: [vr, keyboard]
+maturity: draft
+action_spec:
+  name: normalized_swerve_body_twist
+  units: [m/s, m/s, rad/s]
+reward_config:
+  step_penalty: -0.01
+  distance_reward_scale: 1.0
+  distance_progress_reward_scale: 1.0
+  heading_error_reward_scale: 0.25
+  heading_progress_reward_scale: 0.1
+  success_reward: 100.0
+metadata:
+  readiness: arena_adapter_implementation_pending_simulation_acceptance

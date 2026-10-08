@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="openflex_isaac">
+
+  <!-- ============================================
+       OpenFleX Isaac Sim URDF
+
+       This is a wrapper that includes the original OpenFleX URDF
+       and adds Isaac Sim specific configurations
+       ============================================ -->
+
+  <!-- Arguments -->
+  <xacro:arg name="use_fake_hardware" default="true"/>
+  <xacro:arg name="use_isaac_sim" default="true"/>
+  <xacro:arg name="sensor_profile" default="full"/>
+  <xacro:arg name="enable_sensors" default="true"/>
+  <xacro:arg name="enable_cameras" default="true"/>
+  <xacro:arg name="enable_lidar" default="true"/>
+  <xacro:arg name="enable_imu" default="true"/>
+
+  <!-- Include the base OpenFleX robot description -->
+  <!-- This is the filename installed by the current OpenFlex description
+       package. It already contains the arm end-effectors; do not add them a
+       second time here. -->
+  <xacro:include filename="$(find openarmx_integrated_description)/urdf/openarmx_integrated_robot.urdf.xacro"/>
+
+  <!-- Isaac Sim specific sensors and configurations -->
+  <xacro:if value="$(arg enable_sensors)">
+
+    <!-- Head Camera (mounted on head) -->
+    <xacro:if value="$(arg enable_cameras)">
+      <link name="head_camera_link">
+        <visual>
+          <geometry>
+            <box size="0.02 0.08 0.02"/>
+          </geometry>
+          <material name="camera_grey">
+            <color rgba="0.5 0.5 0.5 1.0"/>
+          </material>
+        </visual>
+      </link>
+
+      <joint name="head_camera_joint" type="fixed">
+        <parent link="head_yaw_link"/>
+        <child link="head_camera_link"/>
+        <origin xyz="0.05 0 0.02" rpy="0 0 0"/>
+      </joint>
+
+      <link name="head_camera_optical_frame"/>
+      <joint name="head_camera_optical_joint" type="fixed">
+        <parent link="head_camera_link"/>
+        <child link="head_camera_optical_frame"/>
+        <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      </joint>
+    </xacro:if>
+
+    <!-- Chest Camera (mounted on torso/lift carriage) -->
+    <xacro:if value="$(arg enable_cameras)">
+      <link name="chest_camera_link">
+        <visual>
+          <geometry>
+            <box size="0.02 0.08 0.02"/>
+          </geometry>
+          <material name="camera_grey">
+            <color rgba="0.5 0.5 0.5 1.0"/>
+          </material>
+        </visual>
+      </link>
+
+      <joint name="chest_camera_joint" type="fixed">
+        <parent link="lift_carriage_link"/>
+        <child link="chest_camera_link"/>
+        <origin xyz="0.15 0 0.3" rpy="0 0.2 0"/>
+      </joint>
+
+      <link name="chest_camera_optical_frame"/>
+      <joint name="chest_camera_optical_joint" type="fixed">
+        <parent link="chest_camera_link"/>
+        <child link="chest_camera_optical_frame"/>
+        <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      </joint>
+    </xacro:if>
+
+    <!-- Wrist Cameras (mounted on arm end-effectors) -->
+    <xacro:if value="$(arg enable_cameras)">
+      <!-- Left wrist camera -->
+      <link name="left_wrist_camera_link">
+        <visual>
+          <geometry>
+            <box size="0.015 0.04 0.015"/>
+          </geometry>
+          <material name="camera_grey">
+            <color rgba="0.5 0.5 0.5 1.0"/>
+          </material>
+        </visual>
+      </link>
+
+      <joint name="left_wrist_camera_joint" type="fixed">
+        <parent link="openarmx_left_link6"/>
+        <child link="left_wrist_camera_link"/>
+        <origin xyz="0.05 0 0" rpy="0 0 0"/>
+      </joint>
+
+      <link name="left_wrist_camera_optical_frame"/>
+      <joint name="left_wrist_camera_optical_joint" type="fixed">
+        <parent link="left_wrist_camera_link"/>
+        <child link="left_wrist_camera_optical_frame"/>
+        <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      </joint>
+
+      <!-- Right wrist camera -->
+      <link name="right_wrist_camera_link">
+        <visual>
+          <geometry>
+            <box size="0.015 0.04 0.015"/>
+          </geometry>
+          <material name="camera_grey">
+            <color rgba="0.5 0.5 0.5 1.0"/>
+          </material>
+        </visual>
+      </link>
+
+      <joint name="right_wrist_camera_joint" type="fixed">
+        <parent link="openarmx_right_link6"/>
+        <child link="right_wrist_camera_link"/>
+        <origin xyz="0.05 0 0" rpy="0 0 0"/>
+      </joint>
+
+      <link name="right_wrist_camera_optical_frame"/>
+      <joint name="right_wrist_camera_optical_joint" type="fixed">
+        <parent link="right_wrist_camera_link"/>
+        <child link="right_wrist_camera_optical_frame"/>
+        <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      </joint>
+    </xacro:if>
+
+  </xacro:if>
+
+</robot>

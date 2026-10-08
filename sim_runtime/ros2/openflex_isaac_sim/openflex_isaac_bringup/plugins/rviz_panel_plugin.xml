@@ -1,0 +1,10 @@
+<library path="openflex_isaac_bringup_rviz_panel">
+  <class
+    name="openflex_isaac_bringup/SimulationControlSensorsPanel"
+    type="openflex_isaac_bringup::SimulationControlSensorsPanel"
+    base_class_type="rviz_common::Panel">
+    <description>
+      Switchable simulation base/lift controls and optional camera/LiDAR views.
+    </description>
+  </class>
+</library>

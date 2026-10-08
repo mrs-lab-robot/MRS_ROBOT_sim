@@ -30,15 +30,27 @@ class VrTeleopLaunchTest(unittest.TestCase):
                 self.assertIn(f'package="{package}"', script)
                 self.assertIn(f'executable="{executable}"', script)
 
-    def test_isaac_arm_adapter_selects_hand_tcp_without_modifying_common_vr(self) -> None:
+    def test_isaac_arm_adapter_preserves_the_working_hardware_ik_frames(self) -> None:
         adapter = PACKAGE_DIR / "scripts" / "isaacsim_vr_arm_node.py"
         script = LAUNCH_FILE.read_text(encoding="utf-8")
 
         self.assertTrue(adapter.is_file())
         adapter_text = adapter.read_text(encoding="utf-8")
-        self.assertIn('"openarmx_left_hand_tcp"', adapter_text)
-        self.assertIn('"openarmx_right_hand_tcp"', adapter_text)
+        self.assertIn('"openarmx_left_link7_pico"', adapter_text)
+        self.assertIn('"openarmx_right_link7_pico"', adapter_text)
+        self.assertNotIn('"openarmx_left_hand_tcp"', adapter_text)
+        self.assertNotIn('"openarmx_right_hand_tcp"', adapter_text)
         self.assertIn('"urdf_path": isaac_urdf', script)
+
+    def test_isaac_keeps_the_parallel_gripper_in_every_pose_mode(self) -> None:
+        script = LAUNCH_FILE.read_text(encoding="utf-8")
+        controller_config = (
+            PACKAGE_DIR / "config" / "controllers.isaac.mobile_base.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"robot_type": "gripper"', script)
+        self.assertIn("openarmx_left_finger_joint1", controller_config)
+        self.assertIn("openarmx_right_finger_joint1", controller_config)
 
     def test_launch_uses_isaac_urdf_and_conservative_chassis_defaults(self) -> None:
         script = LAUNCH_FILE.read_text(encoding="utf-8")

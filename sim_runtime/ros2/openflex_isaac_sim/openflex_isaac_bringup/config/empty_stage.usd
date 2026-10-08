@@ -1,0 +1,30 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    timeCodesPerSecond = 60
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def DomeLight "DomeLight"
+    {
+        color3f inputs:color = (1, 1, 1)
+        float inputs:intensity = 1000
+    }
+
+    def Mesh "Ground" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "SemanticsLabelsAPI:class"]
+    )
+    {
+        token[] semantics:labels:class = ["floor"]
+        uniform bool doubleSided = 1
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)]
+        point3f[] points = [(-40, -40, 0), (40, -40, 0), (40, 40, 0), (-40, 40, 0)]
+        color3f[] primvars:displayColor = [(0.35, 0.35, 0.35)]
+        uniform token subdivisionScheme = "none"
+    }
+}
