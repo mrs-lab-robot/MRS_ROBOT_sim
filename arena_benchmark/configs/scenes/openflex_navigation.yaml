@@ -1,0 +1,5 @@
+version: 1
+scene_id: openflex_navigation
+display_name: OpenFlex 导航场景
+embodiment: openflex
+task_id: openflex_navigation_to_goal

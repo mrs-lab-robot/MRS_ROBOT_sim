@@ -97,6 +97,11 @@ def main() -> None:
     parser.add_argument("--record-dir", default="outputs/datasets")
     parser.add_argument("--task-yaml", default="", help="IsaacLab-Arena task graph YAML to load")
     parser.add_argument("--scene-yaml", default="", help="IsaacLab-Arena scene graph YAML to load with NoTask")
+    parser.add_argument("--task-id", default="", help="First-party OpenFlex task registry ID")
+    parser.add_argument("--scene-id", default="", help="First-party scene ID recorded in session metadata")
+    parser.add_argument("--seed", type=int, default=None, help="Deterministic reset/policy seed")
+    parser.add_argument("--episodes", type=int, default=1, help="Target number of episodes for this session")
+    parser.add_argument("--session-metadata", default="", help="Write session provenance JSON to this path")
     parser.add_argument("--camera-stream-port", type=int, default=24104)
     parser.add_argument("--camera-stream-hz", type=float, default=15.0)
     parser.add_argument("--record-image-hz", type=float, default=15.0)
@@ -131,6 +136,12 @@ def main() -> None:
         parser.error(f"--reset-randomization-json is invalid: {error}")
     if args.task_yaml and args.scene_yaml:
         parser.error("--task-yaml and --scene-yaml are mutually exclusive")
+    if args.task_id and (args.task_yaml or args.scene_yaml):
+        parser.error("--task-id cannot be combined with --task-yaml/--scene-yaml")
+    if args.episodes < 1:
+        parser.error("--episodes must be at least 1")
+    if args.seed is not None and args.seed < 0:
+        parser.error("--seed must be non-negative")
     for argument_name in ("task_yaml", "scene_yaml"):
         value = getattr(args, argument_name)
         if value:
@@ -173,6 +184,13 @@ def main() -> None:
     first_app_exiting = None
     try:
         import torch
+        if args.seed is not None:
+            torch.manual_seed(args.seed)
+            try:
+                import numpy as np
+                np.random.seed(args.seed)
+            except ImportError:
+                pass
         from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
         from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
         from isaaclab_arena.utils.rate_limiter import RateLimiter
@@ -184,13 +202,41 @@ def main() -> None:
         from mrs_robot_lab.recorders.teleop_episode import EpisodeState, TeleopEpisodeRecorder
         from mrs_teleoperation.safety import CommandWatchdog
         from mrs_teleoperation.udp_link import UdpTeleopLink
+        from mrs_arena.environments.openflex_graph_loader import (
+            apply_reset_randomization_overrides,
+            apply_simulation_rate_overrides,
+        )
         if not args.headless:
             from mrs_teleoperation.kit_panel import TeleopPanel
 
-        if args.task_yaml:
+        task_profile = None
+        if args.task_id:
+            from mrs_arena.environments.openflex_task_registry import (
+                get_openflex_task_profile,
+                make_openflex_task_environment,
+            )
+
+            try:
+                task_profile = get_openflex_task_profile(args.task_id)
+            except KeyError as error:
+                raise RuntimeError(str(error)) from error
+            if args.scene_id and args.scene_id != task_profile.scene_id:
+                raise RuntimeError(
+                    f"task {args.task_id} belongs to scene {task_profile.scene_id}, "
+                    f"not {args.scene_id}"
+                )
+            environment = make_openflex_task_environment(
+                args.task_id,
+                dataset_dir=args.record_dir,
+                enable_cameras=args.enable_cameras,
+            )
+            args.scene_id = task_profile.scene_id
+            print(
+                f"ARENA_OPENFLEX_TASK_LOADED {args.task_id} scene={args.scene_id}",
+                flush=True,
+            )
+        elif args.task_yaml:
             from mrs_arena.environments.openflex_graph_loader import (
-                apply_reset_randomization_overrides,
-                apply_simulation_rate_overrides,
                 make_openflex_environment_from_yaml,
             )
 
@@ -200,8 +246,6 @@ def main() -> None:
             print(f"ARENA_TASK_YAML_LOADED {args.task_yaml}", flush=True)
         elif args.scene_yaml:
             from mrs_arena.environments.openflex_graph_loader import (
-                apply_reset_randomization_overrides,
-                apply_simulation_rate_overrides,
                 make_openflex_scene_environment_from_yaml,
             )
 
@@ -210,10 +254,6 @@ def main() -> None:
             )
             print(f"ARENA_SCENE_YAML_LOADED {args.scene_yaml} task=NoTask", flush=True)
         else:
-            from mrs_arena.environments.openflex_graph_loader import (
-                apply_reset_randomization_overrides,
-                apply_simulation_rate_overrides,
-            )
             from mrs_arena.environments.openflex_smoke import make_openflex_smoke_environment
 
             environment = make_openflex_smoke_environment(
@@ -245,6 +285,34 @@ def main() -> None:
             )
         contract_path = AssetResolver().resolve("openflex_embodiment_contract")
         contract_sha256 = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+        session_metadata = {
+            "schema_version": 1,
+            "backend": "arena",
+            "task_id": args.task_id or None,
+            "scene_id": args.scene_id or None,
+            "task_yaml": args.task_yaml or None,
+            "scene_yaml": args.scene_yaml or None,
+            "random_seed": args.seed,
+            "randomization": args.reset_randomization,
+            "episodes": args.episodes,
+            "enable_cameras": bool(args.enable_cameras),
+            "record_image_hz": float(args.record_image_hz),
+            "physics_hz": int(args.physics_hz),
+            "render_hz": int(args.render_hz),
+            "embodiment": "openflex",
+            "embodiment_contract_sha256": contract_sha256,
+        }
+        session_metadata["session_config_sha256"] = hashlib.sha256(
+            json.dumps(session_metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if args.session_metadata:
+            metadata_path = Path(args.session_metadata).expanduser()
+            metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            metadata_path.write_text(
+                json.dumps(session_metadata, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(f"ARENA_SESSION_METADATA {metadata_path}", flush=True)
         panel = TeleopPanel() if not args.headless else None
         link = UdpTeleopLink(
             command_host=args.command_host,
@@ -327,8 +395,13 @@ def main() -> None:
                         },
                         "embodiment_contract_sha256": contract_sha256,
                         "synthetic_vr": bool(synthetic_source),
+                        "task_id": args.task_id,
+                        "scene_id": args.scene_id,
                         "task_yaml": args.task_yaml,
                         "scene_yaml": args.scene_yaml,
+                        "random_seed": args.seed,
+                        "randomization": args.reset_randomization,
+                        "session_metadata": session_metadata,
                     },
                 )
                 last_saved_path = str(saved_path.resolve())

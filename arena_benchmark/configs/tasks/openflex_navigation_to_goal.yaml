@@ -1,0 +1,8 @@
+version: 1
+task_id: openflex_navigation_to_goal
+scene_id: openflex_navigation
+display_name: OpenFlex 导航到目标
+description: 在 Arena 导航场景中驶向目标位姿。
+kind: navigation_to_goal
+factory: make_openflex_navigation_environment
+randomization_keys: []

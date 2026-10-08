@@ -108,7 +108,9 @@ def make_openflex_task_smoke_environment(dataset_dir: str) -> IsaacLabArenaEnvir
     )
 
 
-def make_openflex_pick_cube_environment(dataset_dir: str) -> IsaacLabArenaEnvironment:
+def make_openflex_pick_cube_environment(
+    dataset_dir: str = "outputs/datasets", *, enable_cameras: bool = False
+) -> IsaacLabArenaEnvironment:
     """Build the physical tabletop cube-lift task without any VR dependency."""
 
     from mrs_arena.tasks.openflex_pick_cube_task import OpenFlexPickCubeTask
@@ -123,13 +125,15 @@ def make_openflex_pick_cube_environment(dataset_dir: str) -> IsaacLabArenaEnviro
     return IsaacLabArenaEnvironment(
         name="openflex_pick_cube",
         scene=_OpenFlexPickCubeScene(task),
-        embodiment=OpenFlexEmbodiment(enable_cameras=False),
+        embodiment=OpenFlexEmbodiment(enable_cameras=enable_cameras),
         task=task,
         env_cfg_callback=configure_recording,
     )
 
 
-def make_openflex_dual_arm_box_environment(dataset_dir: str) -> IsaacLabArenaEnvironment:
+def make_openflex_dual_arm_box_environment(
+    dataset_dir: str = "outputs/datasets", *, enable_cameras: bool = False
+) -> IsaacLabArenaEnvironment:
     """Build the bilateral carry/place task with actual filtered finger contacts."""
     from mrs_arena.tasks.dual_arm_box_transport import DualArmBoxTransportTask
 
@@ -143,7 +147,7 @@ def make_openflex_dual_arm_box_environment(dataset_dir: str) -> IsaacLabArenaEnv
     return IsaacLabArenaEnvironment(
         name="openflex_dual_arm_box_transport",
         scene=_OpenFlexDualArmBoxScene(task),
-        embodiment=OpenFlexEmbodiment(enable_cameras=False),
+        embodiment=OpenFlexEmbodiment(enable_cameras=enable_cameras),
         task=task,
         env_cfg_callback=configure_recording,
     )

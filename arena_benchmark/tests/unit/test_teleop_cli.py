@@ -136,7 +136,24 @@ class TeleopCliTest(unittest.TestCase):
         self.assertIn("--record-dir", result.stdout)
         self.assertIn("--reset-randomization-json", result.stdout)
         self.assertIn("--task-yaml", result.stdout)
+        self.assertIn("--task-id", result.stdout)
+        self.assertIn("--seed", result.stdout)
+        self.assertIn("--session-metadata", result.stdout)
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_task_id_path_prepares_shared_environment_hooks_before_branching(self) -> None:
+        script = Path(__file__).resolve().parents[2] / "scripts" / "teleop_vr_openflex.py"
+        source = script.read_text(encoding="utf-8")
+        branch = source.index("if args.task_id:")
+        hooks = source.index(
+            "from mrs_arena.environments.openflex_graph_loader import (\n"
+            "            apply_reset_randomization_overrides,"
+        )
+        self.assertLess(
+            hooks,
+            branch,
+            "task-id sessions must import the shared reset/rate hooks before branching",
+        )
 
 
 if __name__ == "__main__":

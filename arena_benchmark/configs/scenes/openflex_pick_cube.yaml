@@ -1,0 +1,5 @@
+version: 1
+scene_id: openflex_pick_cube
+display_name: OpenFlex 方块抓取场景
+embodiment: openflex
+task_id: openflex_pick_cube

@@ -1,0 +1,5 @@
+version: 1
+scene_id: openflex_box_transport
+display_name: OpenFlex 箱子搬运场景
+embodiment: openflex
+task_id: openflex_dual_arm_box_transport

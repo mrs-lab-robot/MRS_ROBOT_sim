@@ -10,3 +10,19 @@ scenes:
     light:
       prim_path: /World/Light
       intensity: [1000, 1800]
+  openflex_box_transport:
+    objects:
+      transport_box:
+        position_xy_m: [-0.03, 0.03]
+        yaw_deg: [-10, 10]
+    light:
+      prim_path: /World/dome_light
+      intensity: [1400, 2200]
+  openflex_pick_cube:
+    objects:
+      cube:
+        position_xy_m: [-0.03, 0.03]
+        yaw_deg: [-15, 15]
+    light:
+      prim_path: /World/dome_light
+      intensity: [1400, 2200]

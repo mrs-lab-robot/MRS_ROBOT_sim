@@ -1,0 +1,8 @@
+version: 1
+task_id: openflex_pick_cube
+scene_id: openflex_pick_cube
+display_name: OpenFlex 抓取方块
+description: 从桌面抓取方块并完成抬升。
+kind: pick_cube
+factory: make_openflex_pick_cube_environment
+randomization_keys: [objects, light]
