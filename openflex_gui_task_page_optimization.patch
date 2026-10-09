@@ -1,0 +1,197 @@
+--- a/openflex_ws/src/openflex_integrated/openflex_gui/openflex_gui/pages/scene_tasks_page.py
++++ b/openflex_ws/src/openflex_integrated/openflex_gui/openflex_gui/pages/scene_tasks_page.py
+@@ -2,25 +2,41 @@
+ from __future__ import annotations
+
+ from ..main_window import (
++    QFrame,
++    QHBoxLayout,
+     QLabel,
++    Qt,
+     QVBoxLayout,
+     QWidget,
+     ARENA_BACKEND,
+ )
++from ..ui_kit import page_subtitle, page_title
+
+
+ def build(self) -> QWidget:
+     page = QWidget()
+     page.setObjectName("sceneTaskPage")
+     root = QVBoxLayout(page)
+-    root.setContentsMargins(16, 12, 16, 16)
+-    root.setSpacing(12)
++    root.setContentsMargins(28, 24, 28, 28)
++    root.setSpacing(14)
++
++    title = page_title("任务配置")
++    title.setObjectName("sceneTaskPageTitle")
++    root.addWidget(title)
++
++    subtitle = page_subtitle(
++        "选择 Arena 场景与任务，并配置环境复位时的随机化参数。"
++        "相机、回合数和采集启动选项集中在数据采集页。"
++    )
++    subtitle.setObjectName("sceneTaskPageSubtitle")
++    root.addWidget(subtitle)
+
+     # 隐藏arena_control_panel主面板
+     self.arena_control_panel.setVisible(False)
+     self.arena_control_panel.hide()
+
+-    # 直接使用selection_panel，它包含了场景/任务选择和随机化配置
++    # 直接复用 Arena 选择器，保证目录扫描、兼容性检查和随机化信号仍由
++    # ArenaControlPanel 统一维护。
+     selection_panel = self.arena_control_panel.selection_panel
+
+     # 从原parent移除
+@@ -30,11 +46,33 @@
+
+     # 重新设置parent和可见性
+     selection_panel.setParent(page)
+-    selection_panel.setTitle("场景与任务配置")
++    selection_panel.setTitle("场景与任务")
++    selection_panel.setProperty("card", True)
+     selection_panel.setVisible(
+         self.runtime_mode == "sim" and self.simulation_backend == ARENA_BACKEND
+     )
+
++    summary_strip = QFrame(selection_panel)
++    summary_strip.setObjectName("arenaTaskSummaryStrip")
++    summary_layout = QHBoxLayout(summary_strip)
++    summary_layout.setContentsMargins(10, 8, 10, 8)
++    summary_layout.setSpacing(12)
++    summary_label = QLabel("当前选择")
++    summary_label.setObjectName("arenaTaskSummaryLabel")
++    summary_value = QLabel()
++    summary_value.setObjectName("arenaTaskConfigurationSummary")
++    summary_value.setWordWrap(True)
++    summary_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
++    summary_layout.addWidget(summary_label, 0)
++    summary_layout.addWidget(summary_value, 1)
++
++    selection_layout = selection_panel.layout()
++    if selection_layout is not None:
++        selection_layout.insertWidget(0, summary_strip)
++
++    randomization_panel = self.arena_control_panel.reset_randomization_panel
++    randomization_panel.setProperty("section", "randomization")
++
+     root.addWidget(selection_panel)
+
+     # 隐藏不属于此页面的控件（相机和回合数在数据采集页）
+@@ -42,6 +80,37 @@
+     self.arena_control_panel.camera_stream_hz_spin.setVisible(False)
+     self.arena_control_panel.episode_count_spin.setVisible(False)
+
++    # The episode spin box is moved to the data collection page during its
++    # construction. Hide its old grid label as well, otherwise the selector
++    # retains an empty "回合数" row.
++    if selection_layout is not None and selection_layout.count() > 1:
++        grid = selection_layout.itemAt(1).layout()
++        if grid is not None:
++            for row in range(grid.rowCount()):
++                label_item = grid.itemAtPosition(row, 0)
++                field_item = grid.itemAtPosition(row, 1)
++                label = label_item.widget() if label_item is not None else None
++                field = field_item.widget() if field_item is not None else None
++                if label is not None and label.text().strip() == "回合数":
++                    label.setVisible(False)
++                    if field is not None and field is not self.arena_control_panel.episode_count_spin:
++                        field.setVisible(False)
++
++    def _update_task_summary(*_args):
++        scene = self.arena_control_panel.scene_combo.currentText().strip() or "未选择"
++        task = self.arena_control_panel.task_combo.currentText().strip() or "未选择"
++        summary_value.setText(f"场景：{scene}\n任务：{task}")
++        summary_value.setProperty(
++            "state",
++            "ready" if self.arena_control_panel.task_combo.currentData() else "warning",
++        )
++        summary_value.style().unpolish(summary_value)
++        summary_value.style().polish(summary_value)
++
++    _update_task_summary()
++    self.arena_control_panel.scene_combo.currentIndexChanged.connect(_update_task_summary)
++    self.arena_control_panel.task_combo.currentIndexChanged.connect(_update_task_summary)
++
+     # 传感器面板移到传感配置页
+     sensor_panel = self.arena_control_panel.sensor_panel
+     sensor_parent = sensor_panel.parentWidget()
+--- a/openflex_ws/src/openflex_integrated/openflex_gui/openflex_gui/workflow_ui.py
++++ b/openflex_ws/src/openflex_integrated/openflex_gui/openflex_gui/workflow_ui.py
+@@ -492,6 +492,35 @@
+             subcontrol-origin: margin; left: 10px; padding: 0 4px;
+             color: {text}; font-weight: 700;
+         }}
++        QWidget#sceneTaskPage QFrame#arenaTaskSummaryStrip {{
++            background: {bg}; border: 1px solid {border}; border-radius: 6px;
++        }}
++        QWidget#sceneTaskPage QLabel#sceneTaskPageTitle {{
++            color: {text}; font-size: 27px; font-weight: 700;
++        }}
++        QWidget#sceneTaskPage QLabel#sceneTaskPageSubtitle {{
++            color: {muted}; font-size: 13px;
++        }}
++        QWidget#sceneTaskPage QLabel#arenaTaskSummaryLabel {{
++            color: {muted}; font-size: 11px; font-weight: 700;
++        }}
++        QWidget#sceneTaskPage QLabel#arenaTaskConfigurationSummary {{
++            color: {text}; font-size: 12px; font-weight: 600;
++        }}
++        QWidget#sceneTaskPage QLabel#arenaTaskConfigurationSummary[state="ready"] {{
++            color: #176f60;
++        }}
++        QWidget#sceneTaskPage QLabel#arenaTaskConfigurationSummary[state="warning"] {{
++            color: #a96814;
++        }}
++        QWidget#sceneTaskPage QGroupBox[section="randomization"] {{
++            background: transparent; border: 1px solid {border}; border-radius: 6px;
++            margin-top: 8px; padding: 8px 10px 10px 10px;
++        }}
++        QWidget#sceneTaskPage QGroupBox[section="randomization"]::title {{
++            subcontrol-origin: margin; left: 10px; padding: 0 4px;
++            color: {text}; font-weight: 700;
++        }}
+         QWidget#dataManagementPage QGroupBox::title {{
+             subcontrol-origin: margin; left: 10px; padding: 0 4px;
+         }}
+--- a/openflex_ws/src/openflex_integrated/openflex_gui/test/test_main_window_ui.py
++++ b/openflex_ws/src/openflex_integrated/openflex_gui/test/test_main_window_ui.py
+@@ -3940,6 +3940,36 @@
+         self.assertFalse(collection_page.isAncestorOf(self.window.btn_arena_start_all))
+         self.assertTrue(collection_page.isAncestorOf(self.window.arena_capture_card))
+
++    def test_simulation_task_page_has_stable_configuration_sections(self):
++        """The task page keeps selection and randomization in one styled surface."""
++        self.window.btn_runtime_mode_sim.click()
++        page = self.window.page_stack.widget(PAGE_SCENE_TASK)
++
++        title = page.findChild(QLabel, "sceneTaskPageTitle")
++        subtitle = page.findChild(QLabel, "sceneTaskPageSubtitle")
++        selection_panel = self.window.arena_control_panel.selection_panel
++        randomization_panel = self.window.arena_control_panel.reset_randomization_panel
++        summary = page.findChild(QLabel, "arenaTaskConfigurationSummary")
++
++        self.assertIsNotNone(title)
++        self.assertIsNotNone(subtitle)
++        self.assertIsNotNone(summary)
++        self.assertEqual(selection_panel.objectName(), "arenaSceneTaskSelector")
++        self.assertTrue(selection_panel.property("card"))
++        self.assertTrue(page.isAncestorOf(selection_panel))
++        self.assertTrue(page.isAncestorOf(randomization_panel))
++        self.assertEqual(randomization_panel.parentWidget(), selection_panel)
++        self.assertEqual(randomization_panel.property("section"), "randomization")
++        self.assertIn("场景", summary.text())
++
++        previous_summary = summary.text()
++        scene_combo = page.findChild(QComboBox, "arenaSceneCombo")
++        self.assertIsNotNone(scene_combo)
++        if scene_combo.count() > 1:
++            scene_combo.setCurrentIndex(1)
++            self.app.processEvents()
++            self.assertNotEqual(summary.text(), previous_summary)
++
+     def test_arena_configuration_and_launch_panels_are_in_simulation_page_layout(self):
+         self.window.btn_runtime_mode_sim.click()
+         self.window.simulation_backend_buttons[main_window_module.ARENA_BACKEND].click()
