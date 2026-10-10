@@ -180,6 +180,7 @@ def main() -> None:
     camera_socket = None
     capture_api = None
     sim_step = 0
+    stop_requested = False
     first_app_running = None
     first_app_exiting = None
     try:
@@ -266,7 +267,7 @@ def main() -> None:
         )
         builder = ArenaEnvBuilder(
             environment,
-            ArenaEnvBuilderCfg(num_envs=1, solve_relations=False, disable_fabric=True, device=args.device),
+            ArenaEnvBuilderCfg(num_envs=1, solve_relations=False, disable_fabric=False, device=args.device),
         )
         env = builder.make_registered()
         env.reset()
@@ -462,6 +463,14 @@ def main() -> None:
                     save_episode()
                 elif api_command == "discard":
                     discard_episode()
+                elif api_command == "stop":
+                    if recorder.state is EpisodeState.RECORDING:
+                        discard_episode()
+                    print("ARENA_STOP_REQUESTED", flush=True)
+                    stop_requested = True
+
+            if stop_requested:
+                break
 
             command = watchdog.latest
             actions = action_from_command(
