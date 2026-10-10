@@ -25,7 +25,83 @@ _MAGIC: Final = b"MRC1"
 _HEADER: Final = struct.Struct("!4sBIQHHI")
 MAX_JPEG_BYTES: Final = 8 * 1024 * 1024
 MAX_UDP_DATAGRAM_BYTES: Final = 65_507
-DEFAULT_CHUNK_SIZE: Final = 56 * 1024
+DEFAULT_CHUNK_SIZE: Final = 1_200
+PREVIEW_REGISTER_PACKET: Final = b"MRSR1"
+PREVIEW_PEER_LEASE_S: Final = 3.0
+CAMERA_CHUNK_SIZE_MIN: Final = 200
+CAMERA_CHUNK_SIZE_MAX: Final = MAX_UDP_DATAGRAM_BYTES
+
+
+def validate_camera_chunk_size(chunk_size: int) -> int:
+    """Validate the teleop CLI's configured camera payload chunk size."""
+    if (
+        isinstance(chunk_size, bool)
+        or not isinstance(chunk_size, int)
+        or not CAMERA_CHUNK_SIZE_MIN <= chunk_size <= CAMERA_CHUNK_SIZE_MAX
+    ):
+        raise ValueError(
+            f"camera_chunk_size 必须在 {CAMERA_CHUNK_SIZE_MIN} 到 "
+            f"{CAMERA_CHUNK_SIZE_MAX} 之间"
+        )
+    return chunk_size
+
+
+class PreviewPeerRegistry:
+    """Track the most recent valid preview registration using a short lease."""
+
+    def __init__(self, *, lease_s: float = PREVIEW_PEER_LEASE_S):
+        if lease_s <= 0:
+            raise ValueError("PreviewPeerRegistry lease_s must be positive")
+        self.lease_s = float(lease_s)
+        self._active_peer: tuple[str, int] | None = None
+        self._expires_at = 0.0
+
+    @property
+    def active_peer(self) -> tuple[str, int] | None:
+        return self._active_peer
+
+    def register(
+        self,
+        packet: bytes,
+        peer: tuple[str, int],
+        *,
+        now: float | None = None,
+    ) -> bool:
+        """Accept only the exact registration token and refresh its lease.
+
+        Return True when the registry becomes active or switches to a different
+        peer; the sender can log those transitions without logging heartbeats.
+        """
+        if not isinstance(packet, bytes) or packet != PREVIEW_REGISTER_PACKET:
+            return False
+        current_time = time.monotonic() if now is None else float(now)
+        newly_active = (
+            self._active_peer is None
+            or current_time >= self._expires_at
+            or peer != self._active_peer
+        )
+        self._active_peer = peer
+        self._expires_at = current_time + self.lease_s
+        return newly_active
+
+    def expire(self, *, now: float | None = None) -> bool:
+        """Clear an expired peer, returning whether the active state flipped."""
+        current_time = time.monotonic() if now is None else float(now)
+        if self._active_peer is None or current_time < self._expires_at:
+            return False
+        self._active_peer = None
+        self._expires_at = 0.0
+        return True
+
+    def target(
+        self,
+        fallback: tuple[str, int],
+        *,
+        now: float | None = None,
+    ) -> tuple[str, int]:
+        """Return the leased peer while active, otherwise the legacy target."""
+        self.expire(now=now)
+        return self._active_peer if self._active_peer is not None else fallback
 
 
 def camera_topic_frame(camera_name: str) -> str:
@@ -59,17 +135,18 @@ def encode_camera_frame(
         isinstance(chunk_size, bool)
         or not isinstance(chunk_size, int)
         or chunk_size < 1
-        or chunk_size > MAX_UDP_DATAGRAM_BYTES - _HEADER.size
+        or chunk_size > MAX_UDP_DATAGRAM_BYTES
     ):
         raise ValueError("chunk_size 超出 UDP 数据报上限")
 
-    chunk_count = (len(jpeg_bytes) + chunk_size - 1) // chunk_size
+    payload_chunk_size = min(chunk_size, MAX_UDP_DATAGRAM_BYTES - _HEADER.size)
+    chunk_count = (len(jpeg_bytes) + payload_chunk_size - 1) // payload_chunk_size
     if chunk_count > 0xFFFF:
         raise ValueError("JPEG 分片数量超过协议上限")
     packets = []
     for chunk_index in range(chunk_count):
-        start = chunk_index * chunk_size
-        payload = jpeg_bytes[start:start + chunk_size]
+        start = chunk_index * payload_chunk_size
+        payload = jpeg_bytes[start:start + payload_chunk_size]
         header = _HEADER.pack(
             _MAGIC, camera_id, frame_id, sim_time_ns, chunk_index,
             chunk_count, len(jpeg_bytes),

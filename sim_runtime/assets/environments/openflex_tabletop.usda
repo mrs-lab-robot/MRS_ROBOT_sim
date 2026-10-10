@@ -22,13 +22,14 @@ def Xform "World"
             color3f[] primvars:displayColor = [(0.36, 0.25, 0.16)]
         }
 
+        # 腿长 0.69：从地面(0.0)接到桌面底(0.69)；此前为 0.38 的短腿，导致桌面悬浮。
         def Cube "LegFrontLeft" (
             prepend apiSchemas = ["PhysicsCollisionAPI"]
         )
         {
             double size = 1
-            float3 xformOp:translate = (-0.39, -0.29, -0.53)
-            float3 xformOp:scale = (0.04, 0.04, 0.38)
+            float3 xformOp:translate = (-0.39, -0.29, -0.375)
+            float3 xformOp:scale = (0.04, 0.04, 0.69)
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             color3f[] primvars:displayColor = [(0.28, 0.18, 0.11)]
         }
@@ -38,8 +39,8 @@ def Xform "World"
         )
         {
             double size = 1
-            float3 xformOp:translate = (0.39, -0.29, -0.53)
-            float3 xformOp:scale = (0.04, 0.04, 0.38)
+            float3 xformOp:translate = (0.39, -0.29, -0.375)
+            float3 xformOp:scale = (0.04, 0.04, 0.69)
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             color3f[] primvars:displayColor = [(0.28, 0.18, 0.11)]
         }
@@ -49,8 +50,8 @@ def Xform "World"
         )
         {
             double size = 1
-            float3 xformOp:translate = (-0.39, 0.29, -0.53)
-            float3 xformOp:scale = (0.04, 0.04, 0.38)
+            float3 xformOp:translate = (-0.39, 0.29, -0.375)
+            float3 xformOp:scale = (0.04, 0.04, 0.69)
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             color3f[] primvars:displayColor = [(0.28, 0.18, 0.11)]
         }
@@ -60,8 +61,8 @@ def Xform "World"
         )
         {
             double size = 1
-            float3 xformOp:translate = (0.39, 0.29, -0.53)
-            float3 xformOp:scale = (0.04, 0.04, 0.38)
+            float3 xformOp:translate = (0.39, 0.29, -0.375)
+            float3 xformOp:scale = (0.04, 0.04, 0.69)
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             color3f[] primvars:displayColor = [(0.28, 0.18, 0.11)]
         }

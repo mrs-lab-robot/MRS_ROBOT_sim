@@ -17,6 +17,9 @@ class AssetResolver:
         "openflex_robot_usd": Path("sim_runtime/assets/robots/openflex_robot.usda"),
         "openflex_tabletop_usd": Path("sim_runtime/assets/environments/openflex_tabletop.usda"),
         "openflex_transport_box_usd": Path("sim_runtime/assets/environments/openflex_pick_cube.usda"),
+        "openflex_grid_ground_usd": Path(
+            "sim_runtime/assets/environments/grid_ground/default_environment.usd"
+        ),
         "openflex_embodiment_contract": Path(
             "sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract/config/embodiment.yaml"
         ),

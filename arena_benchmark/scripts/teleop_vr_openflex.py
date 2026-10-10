@@ -12,6 +12,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+_CAMERA_CHUNK_SIZE_DEFAULT = 1_200
 
 _CAMERA_OBSERVATION_NAMES = {
     "base_d435": "base_d435_rgb",
@@ -60,6 +61,7 @@ def _send_encoded_camera_observations(
     *,
     frame_id: int,
     sim_time_ns: int,
+    chunk_size: int = _CAMERA_CHUNK_SIZE_DEFAULT,
 ) -> None:
     """Forward encoded camera frames as bounded UDP chunks for optional preview."""
     from mrs_teleoperation.camera_stream import encode_camera_frame
@@ -70,6 +72,7 @@ def _send_encoded_camera_observations(
             frame_id=frame_id,
             sim_time_ns=sim_time_ns,
             jpeg_bytes=jpeg_bytes,
+            chunk_size=chunk_size,
         ):
             camera_socket.sendto(packet, camera_target)
 
@@ -103,6 +106,8 @@ def main() -> None:
     parser.add_argument("--episodes", type=int, default=1, help="Target number of episodes for this session")
     parser.add_argument("--session-metadata", default="", help="Write session provenance JSON to this path")
     parser.add_argument("--camera-stream-port", type=int, default=24104)
+    parser.add_argument("--camera-register-port", type=int, default=24106)
+    parser.add_argument("--camera-chunk-size", type=int, default=_CAMERA_CHUNK_SIZE_DEFAULT)
     parser.add_argument("--camera-stream-hz", type=float, default=15.0)
     parser.add_argument("--record-image-hz", type=float, default=15.0)
     parser.add_argument("--render-hz", type=int, default=30)
@@ -125,9 +130,12 @@ def main() -> None:
         return
 
     from isaaclab.app import AppLauncher
+    from mrs_arena.sensors.mid360_lifecycle import configure_sensor_kit_args
 
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
+    from mrs_teleoperation.camera_stream import PreviewPeerRegistry, validate_camera_chunk_size
+
     try:
         args.reset_randomization = json.loads(args.reset_randomization_json)
         if not isinstance(args.reset_randomization, dict):
@@ -155,6 +163,12 @@ def main() -> None:
         parser.error("--render-hz must be between 1 and min(120, physics-hz)")
     if not 1 <= args.camera_stream_port <= 65535:
         parser.error("--camera-stream-port must be between 1 and 65535")
+    if not 1 <= args.camera_register_port <= 65535:
+        parser.error("--camera-register-port must be between 1 and 65535")
+    try:
+        args.camera_chunk_size = validate_camera_chunk_size(args.camera_chunk_size)
+    except ValueError as error:
+        parser.error(str(error))
     if args.camera_stream_hz <= 0:
         parser.error("--camera-stream-hz must be greater than zero")
     if not 1.0 <= args.record_image_hz <= 60.0:
@@ -171,15 +185,21 @@ def main() -> None:
     elif "kit" not in args.visualizer:
         parser.error("VR teleoperation requires the Kit GUI; include 'kit' in --viz")
 
+    args.kit_args = configure_sensor_kit_args(args.kit_args)
     app_launcher = AppLauncher(args)
     env = None
-    panel = None
     link = None
     recorder = None
     watchdog = None
     camera_socket = None
+    camera_register_bound = False
+    camera_peer_registry = None
     capture_api = None
+    sensor_api = None
+    sensor_manager = None
+    sensor_runtime = None
     sim_step = 0
+    stop_requested = False
     first_app_running = None
     first_app_exiting = None
     try:
@@ -198,6 +218,10 @@ def main() -> None:
         from mrs_robot_lab.adapters.teleop_adapter import JOINT_STATE_NAMES, action_from_command
         from mrs_robot_lab.adapters.synthetic_vr import SyntheticVrSource
         from mrs_robot_lab.assets.asset_resolver import AssetResolver
+        from mrs_robot_lab.recorders.arena_sensor_api import (
+            ArenaSensorControlServer,
+            ArenaSensorManager,
+        )
         from mrs_robot_lab.recorders.capture_api import CaptureControlServer
         from mrs_robot_lab.recorders.teleop_episode import EpisodeState, TeleopEpisodeRecorder
         from mrs_teleoperation.safety import CommandWatchdog
@@ -206,8 +230,7 @@ def main() -> None:
             apply_reset_randomization_overrides,
             apply_simulation_rate_overrides,
         )
-        if not args.headless:
-            from mrs_teleoperation.kit_panel import TeleopPanel
+        from mrs_arena.sensors.mid360_lifecycle import ArenaMid360Runtime
 
         task_profile = None
         if args.task_id:
@@ -278,9 +301,23 @@ def main() -> None:
         if args.enable_cameras:
             camera_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             camera_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
+            try:
+                camera_socket.bind(("0.0.0.0", int(args.camera_register_port)))
+                camera_register_bound = True
+            except OSError as error:
+                print(
+                    f"[WARN] ARENA_CAMERA_REGISTER_BIND_FAILED "
+                    f"addr=0.0.0.0:{args.camera_register_port} error={error}; "
+                    "continuing with configured fallback target",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            camera_socket.setblocking(False)
+            camera_peer_registry = PreviewPeerRegistry()
             print(
                 f"ARENA_CAMERA_STREAM_READY target={camera_target[0]}:{camera_target[1]} "
-                f"fps<={args.camera_stream_hz:g}",
+                f"fps<={args.camera_stream_hz:g} "
+                f"register={'0.0.0.0:' + str(args.camera_register_port) if camera_register_bound else 'disabled'}",
                 flush=True,
             )
         contract_path = AssetResolver().resolve("openflex_embodiment_contract")
@@ -313,7 +350,6 @@ def main() -> None:
                 encoding="utf-8",
             )
             print(f"ARENA_SESSION_METADATA {metadata_path}", flush=True)
-        panel = TeleopPanel() if not args.headless else None
         link = UdpTeleopLink(
             command_host=args.command_host,
             command_port=args.command_port,
@@ -335,22 +371,66 @@ def main() -> None:
         rate_limiter = RateLimiter(period_seconds=env.unwrapped.step_dt)
         last_saved_path = ""
         current_status = "模拟 VR 已就绪" if synthetic_source else "等待 ROS VR 数据"
-        def update_panel_status(message: str) -> None:
-            if panel is not None:
-                panel.set_status(message)
-
-        update_panel_status(
-            f"Arena 已就绪；监听 {link.command_address[0]}:{link.command_address[1]}，{current_status}"
-        )
         capture_api = CaptureControlServer(host=args.control_host, port=args.control_port)
         capture_api.start()
         capture_api.update_status(ready=True, message=current_status)
+
+        robot_view = getattr(robot, "root_view", None)
+        robot_prim_paths = getattr(robot_view, "prim_paths", ())
+        if not robot_prim_paths:
+            robot_prim_paths = getattr(robot, "prim_paths", ())
+        if not robot_prim_paths:
+            raise RuntimeError("Arena robot does not expose its instantiated prim path")
+        sensor_runtime = ArenaMid360Runtime(
+            app=app_launcher.app,
+            robot_prim_path=str(robot_prim_paths[0]),
+            repository_root=AssetResolver().repository_root,
+        )
+        sensor_manager = ArenaSensorManager()
+        sensor_manager.register(
+            "lidar",
+            label="Livox MID360",
+            topic="/livox/lidar",
+            create=sensor_runtime.create_lidar,
+        )
+        sensor_manager.register(
+            "imu",
+            label="MID360 IMU",
+            topic="/livox/imu",
+            create=sensor_runtime.create_imu,
+        )
+        for sensor_id, label, topic in (
+            ("camera_base", "底盘相机", "/cam_base/color/image"),
+            ("camera_head", "头部相机", "/cam_head/color/image"),
+            ("camera_left", "左手相机", "/cam_left/color/image"),
+            ("camera_right", "右手相机", "/cam_right/color/image"),
+        ):
+            sensor_manager.register_readonly(
+                sensor_id,
+                label=label,
+                topic=topic,
+                active=bool(args.enable_cameras),
+            )
+        sensor_preparation_error = ""
+        try:
+            sensor_runtime.prepare_sensors()
+        except Exception as error:
+            sensor_preparation_error = str(error)
+            print(
+                f"ARENA_SENSOR_PREPARE_ERROR {sensor_preparation_error}",
+                file=sys.stderr,
+                flush=True,
+            )
+        sensor_manager.mark_ready(error=sensor_preparation_error)
+        sensor_api = ArenaSensorControlServer(sensor_manager, host="127.0.0.1", port=8086)
+        sensor_api.start()
         print(
             f"VR_TELEOP_GUI_READY command={link.command_address[0]}:{link.command_address[1]} "
             f"state={args.state_host}:{args.state_port} action_dim={action_shape[-1]}",
             flush=True,
         )
         print(f"ARENA_CAPTURE_API_READY {capture_api.base_url}/api/v1/status", flush=True)
+        print(f"ARENA_SENSOR_API_READY {sensor_api.base_url}/v1/sensors", flush=True)
 
         def update_capture_status(message: str | None = None) -> None:
             if capture_api is None:
@@ -363,14 +443,46 @@ def main() -> None:
                 message=message if message is not None else current_status,
             )
 
+        def reset_environment() -> None:
+            """机器人/场景复位（旧 Kit 面板『复位』语义，且真正复位本体）。
+
+            每次正式开始采集新一集前自动调用：录制中先丢弃当前 episode；
+            env.reset() 处理场景级随机化（物体/灯光）；机器人本体的关节与
+            底盘位姿必须显式写回默认值——实测环境级 reset 不会回写机器人
+            （视为「本体复位」缺口），写回后推进一步使其生效并刷新数据；
+            最后 watchdog.reset() 要求 VR 手柄重新建立控制输入。
+            """
+            nonlocal current_status, sim_step
+            nonlocal joint_position_before, joint_velocity_before, current_by_name
+            if recorder.state is EpisodeState.RECORDING:
+                recorder.discard()
+            env.reset()
+            robot.write_joint_state_to_sim(
+                robot.data.default_joint_pos.clone(),
+                robot.data.default_joint_vel.clone(),
+            )
+            robot.write_root_pose_to_sim(robot.data.default_root_pose.clone())
+            robot.write_root_velocity_to_sim(torch.zeros_like(robot.data.default_root_vel.clone()))
+            env.step(torch.zeros_like(action_tensor))
+            watchdog.reset()
+            sim_step = 0
+            # 重新抓取快照，使本帧记录的状态是复位后的（否则帧 0 残留复位前姿态）
+            joint_position_before, current_by_name = _joint_state(robot, "joint_pos")
+            joint_velocity_before, _ = _joint_state(robot, "joint_vel")
+            current_status = "机器人已复位；等待 VR 手柄重新建立控制输入"
+            print("ARENA_ENVIRONMENT_RESET", flush=True)
+            update_capture_status()
+
         def start_episode() -> None:
             nonlocal current_status
+            if recorder.state is not EpisodeState.RECORDING:
+                # 每次开始采集新一集：先复位机器人/环境，再进入录制
+                reset_environment()
             try:
                 recorder.start()
                 current_status = "正在采集：操作完成后保存 Episode，或丢弃本次采集"
             except RuntimeError as error:
                 current_status = str(error)
-            update_panel_status(current_status)
             update_capture_status()
 
         def save_episode() -> None:
@@ -408,37 +520,45 @@ def main() -> None:
                 current_status = f"Episode 已保存：{last_saved_path}（{saved_steps} 步）"
             except (RuntimeError, OSError, ImportError) as error:
                 current_status = f"保存失败：{error}"
-            update_panel_status(current_status)
             update_capture_status()
 
         def discard_episode() -> None:
             nonlocal current_status
             recorder.discard()
             current_status = "当前 Episode 已丢弃"
-            update_panel_status(current_status)
             update_capture_status()
 
         while app_launcher.app.is_running():
             if first_app_running is None:
                 first_app_running = app_launcher.app.is_running()
                 first_app_exiting = app_launcher.app.is_exiting()
-            for event in panel.pop_events() if panel is not None else ():
-                if event == "record_start":
-                    start_episode()
-                elif event == "record_save":
-                    save_episode()
-                elif event == "record_discard":
-                    discard_episode()
-                elif event == "reset":
-                    if recorder.state is EpisodeState.RECORDING:
-                        recorder.discard()
-                    env.reset()
-                    watchdog.reset()
-                    sim_step = 0
-                    update_panel_status("机器人已复位；等待 VR 手柄重新建立控制输入")
-                elif event == "estop_toggle":
-                    local_estop = not local_estop
-                    update_panel_status("本地急停已触发" if local_estop else "本地急停已解除")
+            sensor_manager.process_pending()
+
+            if camera_socket is not None and camera_register_bound:
+                while True:
+                    now = time.monotonic()
+                    if camera_peer_registry.expire(now=now):
+                        print("ARENA_CAMERA_PEER_RELEASED", flush=True)
+                    try:
+                        register_packet, peer_address = camera_socket.recvfrom(65_535)
+                    except BlockingIOError:
+                        break
+                    except OSError as error:
+                        print(
+                            f"[WARN] ARENA_CAMERA_REGISTER_RECEIVE_FAILED error={error}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        break
+                    if camera_peer_registry.register(
+                        register_packet, peer_address, now=time.monotonic()
+                    ):
+                        print(
+                            f"ARENA_CAMERA_PEER_ACTIVE addr={peer_address[0]}:{peer_address[1]}",
+                            flush=True,
+                        )
+                if camera_peer_registry.expire(now=time.monotonic()):
+                    print("ARENA_CAMERA_PEER_RELEASED", flush=True)
 
             joint_position_before, current_by_name = _joint_state(robot, "joint_pos")
             joint_velocity_before, _ = _joint_state(robot, "joint_vel")
@@ -462,6 +582,16 @@ def main() -> None:
                     save_episode()
                 elif api_command == "discard":
                     discard_episode()
+                elif api_command == "reset":
+                    reset_environment()
+                elif api_command == "stop":
+                    if recorder.state is EpisodeState.RECORDING:
+                        recorder.discard()
+                    print("ARENA_STOP_REQUESTED", flush=True)
+                    stop_requested = True
+
+            if stop_requested:
+                break
 
             command = watchdog.latest
             actions = action_from_command(
@@ -480,12 +610,19 @@ def main() -> None:
                 observations_by_group = observations.get("camera_obs")
                 recorded_camera_frames = _encode_camera_observations(observations_by_group)
                 if camera_socket is not None:
+                    camera_send_target = camera_target
+                    if camera_peer_registry is not None:
+                        if camera_peer_registry.expire(now=time.monotonic()):
+                            print("ARENA_CAMERA_PEER_RELEASED", flush=True)
+                        if camera_peer_registry.active_peer is not None:
+                            camera_send_target = camera_peer_registry.active_peer
                     _send_encoded_camera_observations(
                         camera_socket,
-                        camera_target,
+                        camera_send_target,
                         recorded_camera_frames,
                         frame_id=camera_frame_id,
                         sim_time_ns=int(sim_step * env.unwrapped.step_dt * 1e9),
+                        chunk_size=args.camera_chunk_size,
                     )
                 camera_frame_id = (camera_frame_id + 1) & 0xFFFFFFFF
 
@@ -514,15 +651,10 @@ def main() -> None:
                 if sim_step % 15 == 0:
                     update_capture_status()
 
-            if sim_step % 15 == 0:
-                age = "无 VR" if watchdog.received_at is None else f"{max(0.0, time.monotonic() - watchdog.received_at):.2f}s"
-                mode = "本地急停" if local_estop else ("VR ACTIVE" if watchdog.motion_enabled(time.monotonic()) else "安全保持")
-                recording = f"录制 {recorder.num_steps} 步" if recorder.state is EpisodeState.RECORDING else "未录制"
-                update_panel_status(f"{mode} | 命令年龄 {age} | {recording} | seq={command.seq if command else '-'}")
             rate_limiter.sleep()
     finally:
         pending_exception = sys.exc_info()[1]
-        if panel is not None:
+        if not args.headless:
             from mrs_teleoperation.lifecycle import format_runtime_exit
 
             app = app_launcher.app
@@ -554,8 +686,18 @@ def main() -> None:
                 )
         if recorder is not None and recorder.state is EpisodeState.RECORDING:
             recorder.discard()
-        if panel is not None:
-            panel.close()
+        if sensor_api is not None:
+            sensor_api.stop()
+        if sensor_manager is not None:
+            try:
+                sensor_manager.shutdown()
+            except Exception as error:
+                print(f"ARENA_SENSOR_CLEANUP_ERROR {error}", file=sys.stderr, flush=True)
+        if sensor_runtime is not None:
+            try:
+                sensor_runtime.shutdown()
+            except Exception as error:
+                print(f"ARENA_SENSOR_RUNTIME_CLEANUP_ERROR {error}", file=sys.stderr, flush=True)
         if capture_api is not None:
             capture_api.close()
         if link is not None:

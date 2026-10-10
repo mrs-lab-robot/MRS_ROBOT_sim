@@ -35,6 +35,27 @@ filter_ros_humble_paths() {
 
 filtered_pythonpath="$(filter_ros_humble_paths "${PYTHONPATH:-}")"
 export LD_LIBRARY_PATH="$(filter_ros_humble_paths "${LD_LIBRARY_PATH:-}")"
+kit_ros2_core_dir="${repo_root}/.venv/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.core"
+kit_ros2_humble_lib="${kit_ros2_core_dir}/humble/lib"
+ros2_distro="${ROS_DISTRO:-humble}"
+if [[ "${ros2_distro}" == "humble" && -d "${kit_ros2_humble_lib}" ]]; then
+    export ROS_DISTRO="${ros2_distro}"
+    export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+${LD_LIBRARY_PATH}:}${kit_ros2_humble_lib}"
+fi
+
+# 经典 Isaac Sim 的环境隔离：部分机器的登录 shell 会导出经典安装遗留的
+# ISAAC_PATH/EXP_PATH/CARB_APP_PATH（如 /opt/isaac-sim-4.5、~/isaacsim-6.0）。
+# pip 版 isaacsim 必须自己接管这些变量，否则 AppLauncher 会在错误位置解析
+# isaacsim.simulation_app 扩展（SimulationApp 为 None -> TypeError）。
+# IsaacLab 官方 CLI（isaaclab/cli/commands/envs.py）同样在启动前 unset 这三个。
+unset ISAAC_PATH EXP_PATH CARB_APP_PATH
+
+# Omniverse Kit 首次运行会在交互式终端询问 EULA；无 tty 的自动化启动
+# （GUI / 远程 ssh）会永久卡在提问上。部署即视为已接受，这里预先置好保险。
+export OMNI_KIT_ACCEPT_EULA="${OMNI_KIT_ACCEPT_EULA:-YES}"
+export ACCEPT_EULA="${ACCEPT_EULA:-Y}"
+
 if [[ -z "${MRS_ROBOT_SIM_ROOT:-}" ]]; then
     if [[ -d "${repo_root}/../isaac_sim_core" ]]; then
         sim_root="${repo_root}/.."

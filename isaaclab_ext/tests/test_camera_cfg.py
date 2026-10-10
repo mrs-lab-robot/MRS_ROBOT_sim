@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import unittest
 
 from mrs_robot_lab.assets.asset_resolver import AssetResolver
-from mrs_robot_lab.sensors.camera_cfg import add_capture_cameras, load_camera_mounts
+from mrs_robot_lab.sensors.camera_cfg import add_capture_cameras, build_camera_cfgs, load_camera_mounts
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +38,21 @@ class CameraInterfaceConfigTest(unittest.TestCase):
         )
         self.assertEqual(mounts[0].translation_m, (0.36, 0.0, 0.055))
         self.assertEqual(mounts[0].quaternion_wxyz, (0.5, 0.5, -0.5, -0.5))
+
+    def test_camera_cfgs_apply_calibrated_horizontal_aperture(self):
+        configs = build_camera_cfgs(AssetResolver(ROOT))
+
+        self.assertEqual(
+            tuple(configs),
+            ("base_d435", "head_d435", "left_wrist_d405", "right_wrist_d405"),
+        )
+        for name, config in configs.items():
+            with self.subTest(camera=name):
+                # 经典链路公式：3.2mm × 640 / 415px ≈ 4.9349mm → HFOV ≈ 75.3°
+                # （缺失时回退为默认 20.955mm → HFOV ≈ 146° 超广角）
+                self.assertAlmostEqual(
+                    config.spawn.horizontal_aperture, 3.2 * 640.0 / 415.0, places=6
+                )
 
     def test_capture_mounts_follow_selected_sensor_ids_and_independent_rates(self):
         mounts = load_camera_mounts(

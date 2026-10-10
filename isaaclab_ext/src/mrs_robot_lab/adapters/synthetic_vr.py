@@ -1,4 +1,9 @@
-"""Small, bounded synthetic command source for GUI capture smoke tests."""
+"""Visible, bounded synthetic command source for GUI capture runs without a real VR operator.
+
+The motion is deliberately obvious so an operator can SEE the 模拟 VR stream driving
+the robot (lift bob + head turn + both shoulders swinging in opposite phase), while
+staying slow, smooth and clamp-bounded for safe unattended capture runs.
+"""
 
 from __future__ import annotations
 
@@ -18,9 +23,13 @@ from mrs_teleoperation.protocol import CommandFrame
 
 
 class SyntheticVrSource:
-    """Generate slow, low-amplitude setpoints around the current simulated pose."""
+    """Generate visible, low-speed setpoints around the current simulated pose."""
 
-    _AMPLITUDE_RAD = 0.05
+    _SHOULDER_AMPLITUDE_RAD = 0.30
+    _ARM_YAW_AMPLITUDE_RAD = 0.50
+    _HEAD_YAW_AMPLITUDE_RAD = 0.35
+    _HEAD_PITCH_AMPLITUDE_RAD = 0.15
+    _BASE_YAW_RATE_RAD_S = 0.40
     _FREQUENCY_HZ = 0.25
 
     def __init__(self) -> None:
@@ -50,18 +59,27 @@ class SyntheticVrSource:
                 values.append(max(lower, min(upper, self._home[name] + offset)))
             return tuple(values)
 
-        left_offsets = (self._AMPLITUDE_RAD * math.sin(phase),) + (0.0,) * (len(LEFT_ARM_JOINTS) - 1)
-        right_offsets = (0.0, self._AMPLITUDE_RAD * math.sin(phase + math.pi / 2)) + (
-            (0.0,) * (len(RIGHT_ARM_JOINTS) - 2)
+        # 可见动作组合：底盘原地左右摇摆（最直观）+ 头部转动 + 双臂摆动。
+        # 升降（lift）在载重下无法产生可见位移，保持不动。
+        left_offsets = (
+            self._ARM_YAW_AMPLITUDE_RAD * math.sin(phase),
+            self._SHOULDER_AMPLITUDE_RAD * math.sin(phase),
+        ) + ((0.0,) * (len(LEFT_ARM_JOINTS) - 2))
+        right_offsets = (
+            -self._ARM_YAW_AMPLITUDE_RAD * math.sin(phase),
+            -self._SHOULDER_AMPLITUDE_RAD * math.sin(phase),
+        ) + ((0.0,) * (len(RIGHT_ARM_JOINTS) - 2))
+        head_offsets = (
+            self._HEAD_YAW_AMPLITUDE_RAD * math.sin(phase),
+            self._HEAD_PITCH_AMPLITUDE_RAD * math.sin(phase + math.pi / 2),
         )
-        head_offsets = (0.0, 0.025 * math.sin(phase))
         return CommandFrame(
             seq=int(seq),
             source_time_ns=int(source_time_ns),
             session_id=1,
             deadman=True,
             estop=False,
-            base_twist=(0.0, 0.0, 0.0),
+            base_twist=(0.0, 0.0, self._BASE_YAW_RATE_RAD_S * math.sin(phase)),
             left_arm_position=targets(LEFT_ARM_JOINTS, left_offsets),
             right_arm_position=targets(RIGHT_ARM_JOINTS, right_offsets),
             lift_position=targets(LIFT_JOINTS, (0.0,)),

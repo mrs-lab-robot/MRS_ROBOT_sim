@@ -38,6 +38,7 @@ class CameraMount:
     update_period_s: float
     translation_m: tuple[float, float, float]
     quaternion_wxyz: tuple[float, float, float, float]
+    calibration_id: str | None = None
 
 
 def load_camera_mounts(
@@ -111,6 +112,11 @@ def load_camera_mounts(
         far = _positive_number(value.get("far_m"), f"{name}.far_m")
         if near >= far:
             raise ValueError(f"camera {name} near_m must be less than far_m")
+        calibration_id = value.get("calibration_id")
+        if calibration_id is not None and (
+            not isinstance(calibration_id, str) or not calibration_id.strip()
+        ):
+            raise ValueError(f"camera {name}.calibration_id must be a non-empty string when set")
         relative_parent = parent_path[len(_ROBOT_PRIM):]
         mounts.append(
             CameraMount(
@@ -126,6 +132,7 @@ def load_camera_mounts(
                 update_period_s=1.0 / (requested_rates.get(name, rate) if requested_rates is not None else rate),
                 translation_m=translation,
                 quaternion_wxyz=quaternion,
+                calibration_id=calibration_id,
             )
         )
     if not mounts and requested_rates is None:
@@ -153,25 +160,55 @@ def build_camera_cfgs(
     from isaaclab.sensors import CameraCfg
 
     configs: dict[str, Any] = {}
+    resource_resolver = resolver or AssetResolver()
+    # 标定文件与挂点文件同目录（sim_runtime/config/sensors/realsense/calibration/）。
+    # AssetResolver 只解析文件，故由挂点文件路径派生标定目录。
+    mounts_path = Path(resource_resolver.resolve("openflex_camera_mounts"))
+    calibration_dir = mounts_path.parent / "calibration"
     for mount in load_camera_mounts(
-        resolver,
+        resource_resolver,
         robot_prim_path=robot_prim_path,
         sensor_frequencies_hz=sensor_frequencies_hz,
     ):
+        spawn_kwargs: dict[str, Any] = {
+            "focal_length": mount.focal_length_mm,
+            "clipping_range": (mount.near_m, mount.far_m),
+        }
+        if mount.calibration_id is not None:
+            # 与经典链路 (rig.py) 相同：用标定 K 反算横向光圈
+            # horizontal_aperture = focal_mm × calib_width / fx，还原相机真实 HFOV。
+            # （此前未设置会回退到 20.955mm 默认光圈，HFOV≈146° 呈超广角/畸变。）
+            # 纵向光圈交给 Isaac Lab 按图像宽高比推导，保证像素为正方形。
+            calibration = _read_yaml(calibration_dir / f"{mount.calibration_id}.yaml")
+            matrix = calibration.get("K")
+            if not isinstance(matrix, (list, tuple)) or len(matrix) != 9:
+                raise ValueError(f"camera {mount.name} calibration K must contain 9 values")
+            fx = _positive_number(matrix[0], f"{mount.name}.calibration.fx")
+            calibration_width = _positive_integer(
+                calibration.get("width"), f"{mount.name}.calibration.width"
+            )
+            spawn_kwargs["horizontal_aperture"] = (
+                mount.focal_length_mm * calibration_width / fx
+            )
         configs[mount.name] = CameraCfg(
             prim_path=mount.prim_path,
             update_period=mount.update_period_s,
             height=mount.height,
             width=mount.width,
             data_types=["rgb", "distance_to_image_plane"],
-            spawn=sim_utils.PinholeCameraCfg(
-                focal_length=mount.focal_length_mm,
-                clipping_range=(mount.near_m, mount.far_m),
-            ),
+            spawn=sim_utils.PinholeCameraCfg(**spawn_kwargs),
             offset=CameraCfg.OffsetCfg(
                 pos=mount.translation_m,
-                rot=mount.quaternion_wxyz,
-                convention="ros",
+                # 挂点姿态来自经典 USD 挂点，顺序为 wxyz；Isaac Lab OffsetCfg.rot 要求
+                # (x, y, z, w)，且该值就是 USD 相机本体朝向，须用 "opengl" 约定直传，
+                # 才能复现经典相机的朝向（此前直接传 wxyz 导致四个相机旋转全错）。
+                rot=(
+                    mount.quaternion_wxyz[1],
+                    mount.quaternion_wxyz[2],
+                    mount.quaternion_wxyz[3],
+                    mount.quaternion_wxyz[0],
+                ),
+                convention="opengl",
             ),
         )
     return configs

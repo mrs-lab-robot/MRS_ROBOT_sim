@@ -11,11 +11,18 @@ from isaaclab_arena.scene.scene import Scene
 from isaaclab_arena.utils.configclass import combine_configclass_instances
 
 from mrs_arena.embodiments.openflex import OpenFlexEmbodiment
+from mrs_robot_lab.assets.asset_resolver import AssetResolver
+
+# 本地化地面：不再依赖 AWS omniverse-content 在线资产（拉取失败会让场景创建崩溃）。
+_GROUND_USD_PATH = str(AssetResolver().resolve("openflex_grid_ground_usd"))
 
 
 @configclass
 class _GroundAndLightCfg:
-    ground: AssetBaseCfg = AssetBaseCfg(prim_path="/World/ground", spawn=sim_utils.GroundPlaneCfg())
+    ground: AssetBaseCfg = AssetBaseCfg(
+        prim_path="/World/ground",
+        spawn=sim_utils.GroundPlaneCfg(usd_path=_GROUND_USD_PATH),
+    )
     dome_light: AssetBaseCfg = AssetBaseCfg(
         prim_path="/World/dome_light",
         spawn=sim_utils.DomeLightCfg(intensity=1800.0, color=(0.75, 0.75, 0.75)),

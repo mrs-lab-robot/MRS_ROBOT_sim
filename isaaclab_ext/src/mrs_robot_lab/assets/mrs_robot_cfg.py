@@ -46,7 +46,10 @@ MRS_ROBOT_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.0),
+        # 机器人资产根节点自带 +0.175 m 抬升（即轮子触地、整机站立的 base_link 高度）。
+        # 直接把 base_link 放到 z=0 会让整机下沉 17.5 cm（轮子/底盘埋入地面），
+        # 因此初始位姿必须补上该高度，与经典直接 USD 装载路径（authored z=0.175）一致。
+        pos=(0.0, 0.0, 0.175),
         rot=(0.0, 0.0, 0.0, 1.0),
         joint_pos=_initial_joint_positions(),
     ),
