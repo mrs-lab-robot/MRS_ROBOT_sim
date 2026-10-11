@@ -343,7 +343,8 @@ class ArenaMid360Runtime:
                 self._lidar_relay.stop()
             except BaseException as error:
                 errors.append(error)
-            self._lidar_relay = None
+            else:
+                self._lidar_relay = None
         self._active_sensors.clear()
         if imu is not None:
             try:
@@ -361,11 +362,11 @@ class ArenaMid360Runtime:
                 self._release_sensor_root(stage)
             except BaseException as error:
                 errors.append(error)
+        if errors:
+            raise RuntimeError("sensor shutdown cleanup failed: " + "; ".join(map(str, errors)))
         self._prepared_lidar = None
         self._prepared_imu = None
         self._prepared_stage = None
-        if errors:
-            raise RuntimeError("sensor shutdown cleanup failed: " + "; ".join(map(str, errors)))
 
     def _stage(self) -> Any:
         import omni.usd

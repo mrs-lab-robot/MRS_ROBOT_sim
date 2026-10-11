@@ -35,26 +35,42 @@ The target baseline is deliberately pinned as one compatible stack; runtime acce
 The machine-readable lock is `../configs/versions.yaml` (`configs/runtime/versions.yaml` is a compatibility link).
 Keep the Arena commit, its Isaac Lab submodule commit,
 and the simulator version in sync; do not update only one of them. Docker is optional: Arena 0.3.0 supports native
-`uv` installation as well as Docker. The workstation checkout of Arena and `/home/y/IsaacLab` are separate checkouts
-and must not be mixed with it.
+`uv` installation as well as Docker.
+
+## Platform limitations
+
+The verified target is a native install on Linux amd64 (x86_64) using the pinned Python 3.12, Isaac Sim 6.0 line,
+Isaac Lab 3.0.0b2, and Arena commit above; system Python 3.10/3.11 is not applicable. The companion real-robot driver
+packages only publish an amd64 Debian (`.deb`) package and a CPython 3.10 x86_64 manylinux wheel, so do not assume any
+other CPU architecture or Python version works. This repository does not verify a minimum GPU/driver version or
+non-x86_64 Linux; treat those as unverified until confirmed by an integration test on the target machine.
 
 ## Checkout and setup
 
-From the `MRS_ROBOT_sim` root, initialize the upstream Arena submodule and enter this directory:
+This directory belongs to the standalone `MRS_ROBOT_sim` Git repository; the desktop GUI and real-robot applications
+live in the separate `MRS_ROBOT` repository (see the repository boundaries table above), so do not mix the two
+checkouts. `MRS_ROBOT_sim` also pins an independent Git submodule at `third_party/IsaacLab-Arena`: a plain
+`git clone` does not check out its contents, so it must be initialized explicitly, otherwise
+`scripts/run_native_isaac.sh` and the integration tests will be missing the upstream Arena source.
+
+From the `MRS_ROBOT_sim` root, clone, initialize the upstream Arena submodule, and enter this directory:
 
 ```bash
+git clone git@github.com:mrs-lab-robot/MRS_ROBOT_sim.git
+cd MRS_ROBOT_sim
 git submodule update --init third_party/IsaacLab-Arena
 cd arena_benchmark
 ```
 
-If the repository was cloned without submodules:
+If the repository was already cloned without submodules (run from the repository root):
 
 ```bash
 git submodule update --init third_party/IsaacLab-Arena
 ```
 
-For native Linux setup, use the pinned upstream lock file and Python 3.12. Keep the environment and cache on the
-repository filesystem (adjust if it is on a small system disk):
+For native Linux setup, use the pinned upstream lock file and Python 3.12. Docker is not required; native runs
+still require the pinned Python 3.12/Isaac Sim 6.0/Isaac Lab 3.0 dependencies, and system Python 3.10/3.11 is not
+applicable. Keep the environment and cache on the repository filesystem (adjust if it is on a small system disk):
 
 ```bash
 uv python install 3.12
@@ -71,10 +87,26 @@ This selects the pinned Isaac Lab 3.0.0b2 wheel dependency group. The upstream s
 when developing against the pinned Isaac Lab submodule, with additional checkout and install cost. For Docker, mount
 the unified `MRS_ROBOT_sim` root and set `MRS_ROBOT_SIM_ROOT` to its container path; never put a host-only asset path in the repo.
 
-Run fast checks and the no-task smoke environment:
+On the first launch of Isaac Sim/Kit, NVIDIA may print the Omniverse EULA in the terminal and require interactive
+confirmation. Read the [NVIDIA Omniverse License Agreement](https://docs.omniverse.nvidia.com/platform/latest/common/NVIDIA_Omniverse_License_Agreement.html)
+and let the operator decide whether to accept it; do not auto-accept on their behalf in unattended commands. Before
+that first confirmation, headless smokes exit because there is no readable terminal input.
+
+If the operator has read and explicitly accepted the EULA but the run has no interactive terminal, set
+`OMNI_KIT_ACCEPT_EULA=YES` for that single command (for example
+`OMNI_KIT_ACCEPT_EULA=YES bash scripts/run_native_isaac.sh ...`). That variable records the operator's own decision;
+do not make it a repository or system default. `scripts/run_native_isaac.sh` does not set
+`OMNI_KIT_ACCEPT_EULA`/`ACCEPT_EULA` and does not override an explicit value from the caller; with no explicit value
+and no interactive terminal, Kit waits at or exits on the EULA prompt, which is expected.
+
+Run fast checks and the no-task smoke environment. Fast tests do not launch Kit or need a GPU and run from the
+`arena_benchmark/` directory with the `.venv` above. `AGENTS.md` requires simulator-independent tests to run with
+`PYTHONPATH=src` plus `unittest`; `openflex_isaac_contract` is an ament/CMake package outside `src` with no pip
+editable install, so add its directory explicitly, matching `scripts/run_native_isaac.sh`:
 
 ```bash
-PYTHONPATH=src:../isaaclab_ext/src:../sim_runtime/teleoperation/src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/unit -q
+PYTHONPATH=src:../sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract \
+  .venv/bin/python -m unittest discover -s tests/unit -v
 bash scripts/run_native_isaac.sh scripts/smoke_openflex.py --viz none --device cuda:0
 ```
 
@@ -158,10 +190,12 @@ On `数据采集`, select classic Isaac Sim or IsaacLab-Arena. For Arena, choose
 
 ## Development and tests
 
-Fast unit tests do not launch Isaac Sim:
+Fast unit tests do not launch Isaac Sim and run from the `arena_benchmark/` directory with the native `uv` `.venv`
+above (same command as "Run fast checks" earlier in this document):
 
 ```bash
-PYTHONPATH=src:../isaaclab_ext/src:../sim_runtime/teleoperation/src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit -q
+PYTHONPATH=src:../sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract \
+  .venv/bin/python -m unittest discover -s tests/unit -v
 ```
 
 Simulation integration tests must run in the pinned Arena runtime (native or container). Add tests for articulation load/reset, action

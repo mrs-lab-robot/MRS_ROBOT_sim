@@ -26,6 +26,10 @@ English documentation: [README.md](README.md)
 
 Arena 上游源码以 Git 子模块固定在仓库根目录 `third_party/IsaacLab-Arena`，该目录只读；项目代码位于 `src/mrs_arena`。`mrs_robot_arena` 仅作为旧导入路径兼容 wrapper。
 
+## 平台限制
+
+已验证的运行目标是 Linux amd64（x86_64）上的原生安装，使用上表锁定的 Python 3.12、Isaac Sim 6.0 系列、Isaac Lab 3.0.0b2 和 Arena 提交；系统 Python 3.10/3.11 不适用。与本项目配套的真实机器人驱动包只提供 amd64 的 Debian（`.deb`）包和 CPython 3.10 x86_64 的 manylinux wheel，因此不要假定其他 CPU 架构或 Python 版本可用。本仓库未核实最低 GPU/驱动版本，也未验证非 x86_64 Linux；上述项在目标机器上以对应集成测试确认前均视为未核实。
+
 ## 当前实现
 
 - AssetResolver：从统一仓库根目录定位 openflex_robot.usda、embodiment.yaml 和传感器参数文件。
@@ -62,6 +66,8 @@ Arena 上游源码以 Git 子模块固定在仓库根目录 `third_party/IsaacLa
 
 ## 检出与安装
 
+本目录属于独立的 `MRS_ROBOT_sim` Git 仓库；桌面 GUI 与真实机器人应用位于另一个仓库 `MRS_ROBOT`（见上文仓库边界表），不要把两者的代码混检。`MRS_ROBOT_sim` 内还固定了一个独立的 Git 子模块仓库 `third_party/IsaacLab-Arena`：普通 `git clone` 不会检出它的内容，必须显式初始化，否则 `scripts/run_native_isaac.sh` 与集成测试都会缺少上游 Arena 源码。
+
 Docker 不是必须的。Arena 0.3.0 支持原生 Linux `uv` 安装与 Docker 两种方式；原生运行仍要求锁定的 Python 3.12/Isaac Sim 6.0/Isaac Lab 3.0 依赖，系统 Python 3.10/3.11 不适用。以下示例把 uv 缓存和虚拟环境放在仓库所在磁盘：
 
     git clone git@github.com:mrs-lab-robot/MRS_ROBOT_sim.git
@@ -85,11 +91,12 @@ Docker 不是必须的。Arena 0.3.0 支持原生 Linux `uv` 安装与 Docker �
 
 首次启动 Isaac Sim/Kit 时，NVIDIA 可能会在终端显示 Omniverse EULA 并要求交互确认。请先阅读 [NVIDIA Omniverse License Agreement](https://docs.omniverse.nvidia.com/platform/latest/common/NVIDIA_Omniverse_License_Agreement.html)，由操作者本人决定是否接受；不要在无人值守命令中自动代为确认。尚未完成首次确认时，headless smoke 会因没有可读取的终端输入而退出。
 
-如果操作者已经阅读并明确接受 EULA，而运行方式没有交互终端，可在本次命令前显式设置 `OMNI_KIT_ACCEPT_EULA=YES`（例如 `OMNI_KIT_ACCEPT_EULA=YES bash scripts/run_native_isaac.sh ...`）。该变量代表操作者已作出的接受决定；不要把它设为仓库或系统的默认值。
+如果操作者已经阅读并明确接受 EULA，而运行方式没有交互终端，可在本次命令前显式设置 `OMNI_KIT_ACCEPT_EULA=YES`（例如 `OMNI_KIT_ACCEPT_EULA=YES bash scripts/run_native_isaac.sh ...`）。该变量代表操作者已作出的接受决定；不要把它设为仓库或系统的默认值。`scripts/run_native_isaac.sh` 不设置 `OMNI_KIT_ACCEPT_EULA`/`ACCEPT_EULA`，也不覆盖调用者已给出的明确值；未显式设置且无交互终端时，Kit 会在 EULA 提示处等待或退出，这是预期行为。
 
-先跑快速测试，再启动 Arena no-task 冒烟环境：
+先跑快速测试，再启动 Arena no-task 冒烟环境。快速测试不启动 Kit、不依赖 GPU，使用上面的 `uv` 环境（`arena_benchmark/.venv`），在 `arena_benchmark/` 目录下运行（`AGENTS.md` 要求以 `PYTHONPATH=src` 加 `unittest` 运行模拟器无关测试；`openflex_isaac_contract` 是位于 `src` 之外的 ament/CMake 包、没有 pip editable 安装，因此把它的目录一并显式加入 `PYTHONPATH`，与 `scripts/run_native_isaac.sh` 的做法一致）：
 
-    PYTHONPATH=src:../isaaclab_ext/src:../sim_runtime/teleoperation/src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests/unit -q
+    PYTHONPATH=src:../sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract \
+      .venv/bin/python -m unittest discover -s tests/unit -v
     bash scripts/run_native_isaac.sh scripts/smoke_openflex.py --viz none --device cuda:0
 
 看到 `OPENFLEX_ARENA_SMOKE_OK` 表示 Arena 已加载机器人 USD、reset 成功，处理了低速底盘/左臂探测动作，并完成多步零动作仿真且观测有限；这不是任务奖励或评测结果。
@@ -208,9 +215,10 @@ bash scripts/run_native_isaac.sh scripts/teleop_ros_openflex.py --device cuda:0 
 ROS Humble 的 `rclpy` 留在 Python 3.10 relay 进程中，不会导入到 Isaac 的 Python 3.12 中。
 Arena 每步仍由 Arena 原生 action 执行，ROS 只传输命令和关节状态。
 
-快速单元测试不启动 Kit/Isaac Sim：
+快速单元测试不启动 Kit/Isaac Sim（在 `arena_benchmark/` 下用上面的 `.venv`，与本文开头“先跑快速测试”一节相同）：
 
-    PYTHONPATH=src:../isaaclab_ext/src:../sim_runtime/teleoperation/src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit -q
+    PYTHONPATH=src:../sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract \
+      .venv/bin/python -m unittest discover -s tests/unit -v
 
 导入 `mrs_arena` 包根和 contract reader 不需要 Isaac Sim。导入 `mrs_arena.embodiments.openflex` 前必须先初始化 SimulationApp/Kit；不得在普通单元测试或包的 `__init__.py` 中提前导入 Isaac Lab 模块。`mrs_robot_arena` 仅用于兼容既有导入路径。
 

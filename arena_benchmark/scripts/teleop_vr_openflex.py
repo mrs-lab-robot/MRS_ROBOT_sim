@@ -6,13 +6,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import socket
 import sys
 import time
 from datetime import datetime
+from fractions import Fraction
 from pathlib import Path
 
 _CAMERA_CHUNK_SIZE_DEFAULT = 1_200
+_ARENA_DISABLE_FABRIC = False
 
 _CAMERA_OBSERVATION_NAMES = {
     "base_d435": "base_d435_rgb",
@@ -20,6 +23,67 @@ _CAMERA_OBSERVATION_NAMES = {
     "left_wrist_d405": "left_wrist_d405_rgb",
     "right_wrist_d405": "right_wrist_d405_rgb",
 }
+
+
+def _positive_finite_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as error:
+        raise argparse.ArgumentTypeError("must be a number") from error
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("must be finite and greater than zero")
+    return parsed
+
+
+def _add_positive_finite_float_option(
+    parser: argparse.ArgumentParser, option: str, *, default: float
+) -> argparse.Action:
+    return parser.add_argument(
+        option, type=_positive_finite_float, default=default
+    )
+
+
+def _frame_interval_for_hz(step_dt: float, hz: float) -> int:
+    """Convert a requested sample rate into a positive simulation-step interval."""
+    step_dt = float(step_dt)
+    hz = float(hz)
+    if not math.isfinite(step_dt) or step_dt <= 0:
+        raise ValueError("step_dt must be finite and greater than zero")
+    if not math.isfinite(hz) or hz <= 0:
+        raise ValueError("hz must be finite and greater than zero")
+
+    product = step_dt * hz
+    if product == 0.0:
+        # Preserve positive finite inputs even if their product underflows.
+        interval = round(
+            Fraction(1, 1)
+            / Fraction.from_float(step_dt)
+            / Fraction.from_float(hz)
+        )
+    elif math.isinf(product):
+        interval = 1
+    else:
+        # Keep the same rounding used by the historical recording cadence.
+        try:
+            interval = round(1.0 / product)
+        except OverflowError:
+            interval = round(
+                Fraction(1, 1)
+                / Fraction.from_float(step_dt)
+                / Fraction.from_float(hz)
+            )
+    return max(1, int(interval))
+
+
+def _camera_step_roles(
+    sim_step: int, record_interval: int, stream_interval: int
+) -> tuple[bool, bool, bool]:
+    """Return (capture, record, stream) for independent camera cadences."""
+    if record_interval < 1 or stream_interval < 1:
+        raise ValueError("camera intervals must be positive")
+    record_due = sim_step % record_interval == 0
+    stream_due = sim_step % stream_interval == 0
+    return record_due or stream_due, record_due, stream_due
 
 
 def _encode_camera_observations(camera_observations) -> dict[str, bytes]:
@@ -96,7 +160,7 @@ def main() -> None:
     parser.add_argument("--state-host", default="127.0.0.1")
     parser.add_argument("--state-port", type=int, default=24103)
     parser.add_argument("--camera-stream-host", default="127.0.0.1")
-    parser.add_argument("--watchdog-timeout", type=float, default=0.25)
+    _add_positive_finite_float_option(parser, "--watchdog-timeout", default=0.25)
     parser.add_argument("--record-dir", default="outputs/datasets")
     parser.add_argument("--task-yaml", default="", help="IsaacLab-Arena task graph YAML to load")
     parser.add_argument("--scene-yaml", default="", help="IsaacLab-Arena scene graph YAML to load with NoTask")
@@ -108,8 +172,8 @@ def main() -> None:
     parser.add_argument("--camera-stream-port", type=int, default=24104)
     parser.add_argument("--camera-register-port", type=int, default=24106)
     parser.add_argument("--camera-chunk-size", type=int, default=_CAMERA_CHUNK_SIZE_DEFAULT)
-    parser.add_argument("--camera-stream-hz", type=float, default=15.0)
-    parser.add_argument("--record-image-hz", type=float, default=15.0)
+    _add_positive_finite_float_option(parser, "--camera-stream-hz", default=15.0)
+    _add_positive_finite_float_option(parser, "--record-image-hz", default=15.0)
     parser.add_argument("--render-hz", type=int, default=30)
     parser.add_argument("--physics-hz", type=int, default=120)
     parser.add_argument(
@@ -169,8 +233,6 @@ def main() -> None:
         args.camera_chunk_size = validate_camera_chunk_size(args.camera_chunk_size)
     except ValueError as error:
         parser.error(str(error))
-    if args.camera_stream_hz <= 0:
-        parser.error("--camera-stream-hz must be greater than zero")
     if not 1.0 <= args.record_image_hz <= 60.0:
         parser.error("--record-image-hz must be between 1 and 60")
     if not 1 <= args.control_port <= 65535:
@@ -289,12 +351,21 @@ def main() -> None:
         )
         builder = ArenaEnvBuilder(
             environment,
-            ArenaEnvBuilderCfg(num_envs=1, solve_relations=False, disable_fabric=True, device=args.device),
+            ArenaEnvBuilderCfg(
+                num_envs=1,
+                solve_relations=False,
+                disable_fabric=_ARENA_DISABLE_FABRIC,
+                device=args.device,
+            ),
         )
         env = builder.make_registered()
         env.reset()
-        camera_frame_interval = max(
-            1, int(round(1.0 / (float(env.unwrapped.step_dt) * args.record_image_hz)))
+        step_dt = float(env.unwrapped.step_dt)
+        record_camera_interval = _frame_interval_for_hz(
+            step_dt, args.record_image_hz
+        )
+        stream_camera_interval = _frame_interval_for_hz(
+            step_dt, args.camera_stream_hz
         )
         camera_frame_id = 0
         camera_target = (args.camera_stream_host, int(args.camera_stream_port))
@@ -606,10 +677,13 @@ def main() -> None:
             observations, _, _, _, _ = env.step(action_tensor)
             sim_step += 1
             recorded_camera_frames = None
-            if args.enable_cameras and sim_step % camera_frame_interval == 0:
+            capture_camera, record_camera, stream_camera = _camera_step_roles(
+                sim_step, record_camera_interval, stream_camera_interval
+            )
+            if args.enable_cameras and capture_camera:
                 observations_by_group = observations.get("camera_obs")
-                recorded_camera_frames = _encode_camera_observations(observations_by_group)
-                if camera_socket is not None:
+                camera_frames = _encode_camera_observations(observations_by_group)
+                if stream_camera and camera_socket is not None:
                     camera_send_target = camera_target
                     if camera_peer_registry is not None:
                         if camera_peer_registry.expire(now=time.monotonic()):
@@ -619,12 +693,14 @@ def main() -> None:
                     _send_encoded_camera_observations(
                         camera_socket,
                         camera_send_target,
-                        recorded_camera_frames,
+                        camera_frames,
                         frame_id=camera_frame_id,
                         sim_time_ns=int(sim_step * env.unwrapped.step_dt * 1e9),
                         chunk_size=args.camera_chunk_size,
                     )
-                camera_frame_id = (camera_frame_id + 1) & 0xFFFFFFFF
+                    camera_frame_id = (camera_frame_id + 1) & 0xFFFFFFFF
+                if record_camera:
+                    recorded_camera_frames = camera_frames
 
             next_joint_position, _ = _joint_state(robot, "joint_pos")
             next_joint_velocity, _ = _joint_state(robot, "joint_vel")

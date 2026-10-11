@@ -51,10 +51,11 @@ fi
 # IsaacLab 官方 CLI（isaaclab/cli/commands/envs.py）同样在启动前 unset 这三个。
 unset ISAAC_PATH EXP_PATH CARB_APP_PATH
 
-# Omniverse Kit 首次运行会在交互式终端询问 EULA；无 tty 的自动化启动
-# （GUI / 远程 ssh）会永久卡在提问上。部署即视为已接受，这里预先置好保险。
-export OMNI_KIT_ACCEPT_EULA="${OMNI_KIT_ACCEPT_EULA:-YES}"
-export ACCEPT_EULA="${ACCEPT_EULA:-Y}"
+# NVIDIA Omniverse EULA 的接受必须由操作者本人显式作出。本脚本不设置
+# OMNI_KIT_ACCEPT_EULA / ACCEPT_EULA，也不为用户提供默认值：无交互终端且
+# 未显式设置时，Kit 会在 EULA 提示处等待或退出。若操作者已阅读并接受
+# EULA，请在本次命令前显式设置 OMNI_KIT_ACCEPT_EULA=YES（见 README_CN.md）；
+# 脚本原样继承该设置，不覆盖用户已给出的明确值。
 
 if [[ -z "${MRS_ROBOT_SIM_ROOT:-}" ]]; then
     if [[ -d "${repo_root}/../isaac_sim_core" ]]; then

@@ -262,8 +262,8 @@ RViz 使用 `/livox/lidar_points`。需要 Livox CustomMsg 的 FAST-LIO 使用 `
 以下分层测试不启动 Isaac Sim；Arena 相关用例需要锁定 Python 环境中的 Torch，录制写盘测试还需要 `h5py`：
 
 ```bash
-PYTHONPATH=isaaclab_ext/src:sim_runtime/teleoperation/src:sim_runtime/ros2/mrs_robot_arena_bridge:arena_benchmark/src \
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q \
+PYTHONPATH=arena_benchmark:isaaclab_ext/src:sim_runtime/teleoperation/src:sim_runtime/ros2/mrs_robot_arena_bridge:sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract:arena_benchmark/src \
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 arena_benchmark/.venv/bin/python -m pytest -q \
   tests/migration isaaclab_ext/tests tests/sim_runtime/teleoperation arena_benchmark/tests/unit
 ```
 

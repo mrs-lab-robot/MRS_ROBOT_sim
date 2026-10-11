@@ -34,6 +34,16 @@ class CommandFrameTest(unittest.TestCase):
         with self.assertRaisesRegex(ProtocolError, "finite"):
             CommandFrame.from_dict({"version": 1, "seq": 1, "base_twist": [0.0, float("nan"), 0.0]})
 
+    def test_rejects_overflowing_integer_vector_values(self) -> None:
+        with self.assertRaisesRegex(ProtocolError, "numeric"):
+            CommandFrame.from_dict(
+                {"version": 1, "seq": 1, "base_twist": [10**400, 0.0, 0.0]}
+            )
+
+    def test_rejects_non_finite_sequence_metadata(self) -> None:
+        with self.assertRaises(ProtocolError):
+            CommandFrame.from_dict({"version": 1, "seq": float("inf")})
+
 
 if __name__ == "__main__":
     unittest.main()

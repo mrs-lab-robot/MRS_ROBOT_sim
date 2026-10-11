@@ -28,13 +28,21 @@ class UdpTeleopLink:
         latest: CommandFrame | None = None
         while True:
             try:
-                datagram, _ = self._command_socket.recvfrom(8192)
+                datagram, _ = self._command_socket.recvfrom(65_535)
             except BlockingIOError:
                 break
             try:
                 payload = json.loads(datagram.decode("utf-8"))
                 frame = CommandFrame.from_dict(payload)
-            except (UnicodeDecodeError, json.JSONDecodeError, ProtocolError, AttributeError):
+            except (
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                ProtocolError,
+                AttributeError,
+                OverflowError,
+                RecursionError,
+                ValueError,
+            ):
                 continue
             if latest is None or (frame.session_id, frame.seq) > (latest.session_id, latest.seq):
                 latest = frame

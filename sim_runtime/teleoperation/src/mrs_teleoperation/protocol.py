@@ -119,7 +119,7 @@ class CommandFrame:
                 raise ProtocolError(f"{name} must be an array")
             try:
                 vectors[name] = tuple(float(value) for value in raw_values)
-            except (TypeError, ValueError) as error:
+            except (TypeError, ValueError, OverflowError) as error:
                 raise ProtocolError(f"{name} must contain numeric values") from error
         try:
             return cls(
@@ -132,7 +132,7 @@ class CommandFrame:
                 button_states=payload.get("button_states"),
                 **vectors,
             )
-        except (KeyError, TypeError, ValueError) as error:
+        except (KeyError, TypeError, ValueError, OverflowError) as error:
             if isinstance(error, ProtocolError):
                 raise
             raise ProtocolError(f"invalid command frame: {error}") from error

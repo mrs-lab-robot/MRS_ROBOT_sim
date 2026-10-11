@@ -222,6 +222,57 @@ class Mid360StartupPreparationTest(unittest.TestCase):
             ],
         )
 
+    def test_shutdown_preserves_resources_for_retry_after_cleanup_failures(self) -> None:
+        self.runtime.prepare_sensors()
+        prepared_lidar = self.runtime._prepared_lidar
+        prepared_imu = self.runtime._prepared_imu
+        self.runtime._lidar_relay = self.relay
+        self.runtime._set_gate.side_effect = [
+            RuntimeError("lidar gate failed"),
+            None,
+            None,
+            None,
+        ]
+        self.relay.stop.side_effect = [RuntimeError("relay stop failed"), None]
+        self.runtime._cleanup_imu.side_effect = [RuntimeError("imu cleanup failed"), None]
+        self.runtime._cleanup_lidar.side_effect = [RuntimeError("lidar cleanup failed"), None]
+        self.runtime._release_sensor_root.side_effect = [RuntimeError("root cleanup failed"), None]
+
+        with self.assertRaisesRegex(RuntimeError, "sensor shutdown cleanup failed") as raised:
+            self.runtime.shutdown()
+
+        for message in (
+            "lidar gate failed",
+            "relay stop failed",
+            "imu cleanup failed",
+            "lidar cleanup failed",
+            "root cleanup failed",
+        ):
+            self.assertIn(message, str(raised.exception))
+        self.assertIs(self.runtime._prepared_lidar, prepared_lidar)
+        self.assertIs(self.runtime._prepared_imu, prepared_imu)
+        self.assertIs(self.runtime._prepared_stage, self.stage)
+        self.assertIs(self.runtime._lidar_relay, self.relay)
+        self.runtime._set_gate.assert_has_calls(
+            [
+                call(self.graph_path + "/LidarEnableGate.inputs:step", False),
+                call(self.imu_graph_path + "/IMUEnableGate.inputs:step", False),
+            ]
+        )
+        self.runtime._cleanup_imu.assert_called_once_with(prepared_imu)
+        self.runtime._cleanup_lidar.assert_called_once_with(prepared_lidar)
+        self.runtime._release_sensor_root.assert_called_once_with(self.stage)
+
+        self.runtime.shutdown()
+
+        self.assertIsNone(self.runtime._prepared_lidar)
+        self.assertIsNone(self.runtime._prepared_imu)
+        self.assertIsNone(self.runtime._prepared_stage)
+        self.assertIsNone(self.runtime._lidar_relay)
+        self.assertEqual(self.runtime._cleanup_imu.call_count, 2)
+        self.assertEqual(self.runtime._cleanup_lidar.call_count, 2)
+        self.assertEqual(self.runtime._release_sensor_root.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
