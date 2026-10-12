@@ -23,8 +23,8 @@ class SyntheticVrSourceTest(unittest.TestCase):
     def test_produces_bounded_deadman_command_frames_from_robot_home_pose(self) -> None:
         source = self._started_source()
 
-        first = source.next_frame(seq=1, source_time_ns=10_000_000)
-        later = source.next_frame(seq=30, source_time_ns=300_000_000)
+    def test_generates_visibly_large_command_motion_with_deadman(self) -> None:
+        source = self._started_source()
 
         self.assertTrue(first.deadman)
         self.assertFalse(first.estop)

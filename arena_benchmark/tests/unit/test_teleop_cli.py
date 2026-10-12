@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 import unittest
@@ -140,6 +141,27 @@ class TeleopCliTest(unittest.TestCase):
         self.assertIn("--seed", result.stdout)
         self.assertIn("--session-metadata", result.stdout)
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_vr_teleop_keeps_fabric_enabled_for_kit_rendering(self) -> None:
+        script = Path(__file__).resolve().parents[2] / "scripts" / "teleop_vr_openflex.py"
+        tree = ast.parse(script.read_text(encoding="utf-8"))
+        config_call = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "ArenaEnvBuilderCfg"
+        )
+        setting = next(keyword.value for keyword in config_call.keywords if keyword.arg == "disable_fabric")
+
+        self.assertIsInstance(setting, ast.Constant)
+        self.assertIs(getattr(setting, "value", None), False)
+
+    def test_capture_stop_api_command_terminates_teleop_loop(self) -> None:
+        script = Path(__file__).resolve().parents[2] / "scripts" / "teleop_vr_openflex.py"
+        source = script.read_text(encoding="utf-8")
+        self.assertIn('api_command == "stop"', source)
+        self.assertIn("stop_requested = True", source)
+        self.assertRegex(source, r"if stop_requested:\s*break")
 
     def test_task_id_path_prepares_shared_environment_hooks_before_branching(self) -> None:
         script = Path(__file__).resolve().parents[2] / "scripts" / "teleop_vr_openflex.py"
