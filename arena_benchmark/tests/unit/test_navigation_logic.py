@@ -33,6 +33,13 @@ class NavigationLogicTest(unittest.TestCase):
         self.assertEqual(parameters.hold_seconds, 1.0)
         self.assertEqual(parameters.episode_length_s, 30.0)
 
+    def test_shared_navigation_task_declares_arena_as_a_supported_backend(self) -> None:
+        task = load_task_spec(SIM_ROOT / "sim_runtime/config/tasks/navigation_to_goal.yaml")
+
+        self.assertIn("isaac_lab", task.supported_backends)
+        self.assertIn("arena", task.supported_backends)
+        self.assertEqual(task.task_id, "navigation_to_goal")
+
     def test_goal_mask_uses_xy_distance_and_wrapped_heading_error(self) -> None:
         task = load_task_spec(SIM_ROOT / "sim_runtime/config/tasks/navigation_to_goal.yaml")
         parameters = self.logic.navigation_parameters_from_task(task)

@@ -14,11 +14,13 @@ try:
         adapt_graph_spec_for_openflex,
         apply_reset_randomization_overrides,
         apply_simulation_rate_overrides,
+        scene_only_graph_data,
     )
 except ImportError:
     adapt_graph_spec_for_openflex = None
     apply_reset_randomization_overrides = None
     apply_simulation_rate_overrides = None
+    scene_only_graph_data = None
 
 
 class TeleopCliTest(unittest.TestCase):
@@ -176,6 +178,45 @@ class TeleopCliTest(unittest.TestCase):
             branch,
             "task-id sessions must import the shared reset/rate hooks before branching",
         )
+
+    def test_scene_only_graph_data_adds_registered_no_task_and_keeps_scene_assets(self) -> None:
+        self.assertIsNotNone(scene_only_graph_data)
+        source = {
+            "embodiment": {"id": "robot", "registry_name": "droid_abs_joint_pos", "params": {}},
+            "background": {"id": "table", "registry_name": "table", "params": {}},
+            "objects": [{"id": "bowl", "registry_name": "bowl", "params": {}}],
+            "relations": [{"kind": "on", "subject": "bowl", "reference": "table", "params": {}}],
+        }
+
+        result = scene_only_graph_data(source, "robolab_scenes_banana_bowl")
+
+        self.assertEqual(result["env_name"], "robolab_scenes_banana_bowl")
+        self.assertEqual(
+            result["task"],
+            {
+                "composition": "atomic",
+                "description": "Load Arena scene robolab_scenes_banana_bowl without an assigned task",
+                "subtasks": [{"kind": "OpenFlexNoTask", "params": {}}],
+            },
+        )
+        self.assertEqual(result["objects"], source["objects"])
+        self.assertEqual(result["relations"], source["relations"])
+
+    def test_scene_only_graph_data_overrides_a_bundled_task_and_external_include(self) -> None:
+        self.assertIsNotNone(scene_only_graph_data)
+        source = {
+            "env_name": "task_with_scene",
+            "external_yaml": "../scenes/scene.yaml",
+            "embodiment": {"id": "robot"},
+            "background": {"id": "table"},
+            "task": {"composition": "atomic", "description": "old", "subtasks": []},
+        }
+
+        result = scene_only_graph_data(source, "selected_scene")
+
+        self.assertNotIn("external_yaml", result)
+        self.assertEqual(result["task"]["subtasks"], [{"kind": "OpenFlexNoTask", "params": {}}])
+        self.assertEqual(result["env_name"], "selected_scene")
 
 
 if __name__ == "__main__":

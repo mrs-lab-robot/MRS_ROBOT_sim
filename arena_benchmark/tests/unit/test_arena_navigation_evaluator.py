@@ -150,6 +150,31 @@ class ArenaNavigationEvaluatorTest(unittest.TestCase):
         wrapper = arena_navigation_evaluator.make_arena_policy_wrapper(mock_rsl_policy)
         self.assertTrue(callable(wrapper))
 
+    def test_generic_arena_episode_result_keeps_seed_and_task_provenance(self) -> None:
+        """通用 Arena episode 结果保留 seed 与任务溯源信息。"""
+        from mrs_arena.learning.arena_openflex_evaluator import make_episode_result
+
+        result = make_episode_result(
+            task_id="openflex_dual_arm_box_transport",
+            index=2,
+            seed=44,
+            steps=17,
+            success=True,
+            extras={"success_rate": 1.0},
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "task_id": "openflex_dual_arm_box_transport",
+                "index": 2,
+                "seed": 44,
+                "steps": 17,
+                "success": True,
+                "extras": {"success_rate": 1.0},
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

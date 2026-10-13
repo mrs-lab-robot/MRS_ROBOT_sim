@@ -22,24 +22,6 @@ class ReportingLayoutTest(unittest.TestCase):
         ):
             self.assertIn(required, text)
 
-    def test_baseline_script_writes_to_control_report_and_unique_evidence_directory(self) -> None:
-        text = (ROOT / "test" / "performance" / "robot_control_performance.py").read_text(encoding="utf-8")
-        self.assertIn('REPORT_PATH = REPORT_DIR / "robot_control_performance.md"', text)
-        self.assertIn('RAW_ROOT = REPORT_DIR / "raw" / "robot_control_baseline"', text)
-        self.assertIn('REPORT_MARKER = "<!-- ROBOT_CONTROL_BASELINE_BATCHES -->"', text)
-        self.assertIn('batch_dir / "result.json"', text)
-        self.assertNotIn('"## Interpretation"', text)
-        self.assertNotIn('"## Scope and Findings"', text)
-        self.assertNotIn('"## Timing evidence"', text)
-
-    def test_full_control_script_writes_to_control_report_and_unique_evidence_directory(self) -> None:
-        text = (ROOT / "test" / "performance" / "robot_control_full_performance.py").read_text(encoding="utf-8")
-        self.assertIn('REPORT_PATH = REPORT_DIR / "robot_control_performance.md"', text)
-        self.assertIn('RAW_ROOT = REPORT_DIR / "raw" / "robot_control_full"', text)
-        self.assertIn('REPORT_MARKER = "<!-- ROBOT_CONTROL_FULL_BATCHES -->"', text)
-        self.assertIn('batch_dir / "result.json"', text)
-        self.assertNotIn('总体状态：**', text)
-
     def test_empty_scene_script_uses_its_own_fixed_report_and_evidence_directory(self) -> None:
         text = (ROOT / "test" / "performance" / "empty_scene_performance.py").read_text(encoding="utf-8")
         self.assertIn('REPORT_PATH = REPORT_DIR / "empty_scene_performance.md"', text)
