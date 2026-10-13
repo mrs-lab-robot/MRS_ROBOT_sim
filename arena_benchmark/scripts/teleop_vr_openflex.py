@@ -684,20 +684,21 @@ def main() -> None:
                 observations_by_group = observations.get("camera_obs")
                 camera_frames = _encode_camera_observations(observations_by_group)
                 if stream_camera and camera_socket is not None:
-                    camera_send_target = camera_target
+                    camera_send_targets = [camera_target]
                     if camera_peer_registry is not None:
                         if camera_peer_registry.expire(now=time.monotonic()):
                             print("ARENA_CAMERA_PEER_RELEASED", flush=True)
                         if camera_peer_registry.active_peer is not None:
-                            camera_send_target = camera_peer_registry.active_peer
-                    _send_encoded_camera_observations(
-                        camera_socket,
-                        camera_send_target,
-                        camera_frames,
-                        frame_id=camera_frame_id,
-                        sim_time_ns=int(sim_step * env.unwrapped.step_dt * 1e9),
-                        chunk_size=args.camera_chunk_size,
-                    )
+                            camera_send_targets.append(camera_peer_registry.active_peer)
+                    for camera_send_target in dict.fromkeys(camera_send_targets):
+                        _send_encoded_camera_observations(
+                            camera_socket,
+                            camera_send_target,
+                            camera_frames,
+                            frame_id=camera_frame_id,
+                            sim_time_ns=int(sim_step * env.unwrapped.step_dt * 1e9),
+                            chunk_size=args.camera_chunk_size,
+                        )
                     camera_frame_id = (camera_frame_id + 1) & 0xFFFFFFFF
                 if record_camera:
                     recorded_camera_frames = camera_frames

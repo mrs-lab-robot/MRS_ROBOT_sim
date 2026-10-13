@@ -12,7 +12,7 @@ from typing import Any
 
 _ROS2_BRIDGE_EXTENSION = "isaacsim.ros2.bridge"
 _SENSOR_KIT_ARGS = (
-    "--/rtx/hydra/supportMultiTickRate=true",
+    "--/rtx/hydra/supportMultiTickRate=false",
     "--/renderer/raytracingMotion/enabled=true",
     "--/renderer/multiGpu/enabled=false",
     "--/exts/omni.replicator.srtx/enabled=false",
