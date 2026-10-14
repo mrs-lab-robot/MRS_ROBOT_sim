@@ -18,7 +18,6 @@ COMMAND_PATHS = {
     "/api/v1/session/stop": "stop",
     "/api/v1/episode/start": "start",
     "/api/v1/episode/save": "save",
-    "/api/v1/episode/export": "export",
     "/api/v1/episode/discard": "discard",
     "/api/v1/environment/reset": "reset",
     # Compatibility aliases for the old GUI diagnostic recorder.
@@ -68,7 +67,6 @@ class CaptureControlServer:
             "recording": False,
             "steps": 0,
             "last_saved_path": "",
-            "last_export_error": "",
             "last_quarantined_path": "",
             "last_qc_failure_reasons": [],
             "teleop_ready": False,

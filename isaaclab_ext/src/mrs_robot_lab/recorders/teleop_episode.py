@@ -56,6 +56,8 @@ class TeleopEpisodeRecorder:
         command_seq: int,
         raw_command: dict[str, Any] | None = None,
         camera_frames: dict[str, bytes] | None = None,
+        lio_pose: list[float] | tuple[float, ...] | None = None,
+        lio_velocity: list[float] | tuple[float, ...] | None = None,
     ) -> None:
         if self.state is not EpisodeState.RECORDING:
             return
@@ -112,6 +114,14 @@ class TeleopEpisodeRecorder:
             if not all(math.isfinite(value) for value in converted):
                 raise ValueError(f"{name} values must be finite")
             sample[name] = converted
+        if lio_pose is not None and lio_velocity is not None:
+            for name, values in (("lio_pose", lio_pose), ("lio_velocity", lio_velocity)):
+                if len(values) != 3:
+                    raise ValueError(f"{name} must contain 3 values")
+                converted = [float(value) for value in values]
+                if not all(math.isfinite(value) for value in converted):
+                    raise ValueError(f"{name} values must be finite")
+                sample[name] = converted
         sample["raw_command"] = raw_command or {}
         encoded_frames: dict[str, bytes] = {}
         if camera_frames is not None:
@@ -180,6 +190,11 @@ class TeleopEpisodeRecorder:
                 ):
                     values = np.asarray([sample[field] for sample in self._samples], dtype="float32")
                     dataset.create_dataset(field, data=values.reshape((-1, width)), compression="gzip")
+
+                if "lio_pose" in self._samples[0]:
+                    for field in ("lio_pose", "lio_velocity"):
+                        values = np.asarray([sample[field] for sample in self._samples], dtype="float32")
+                        dataset.create_dataset(field, data=values.reshape((-1, 3)), compression="gzip")
 
                 # 保留旧的action字段以兼容现有代码（使用applied_target）
                 action_values = np.asarray([sample["applied_target"] for sample in self._samples], dtype="float32")

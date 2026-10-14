@@ -686,7 +686,6 @@ class IsaacLabWorker:
         WorkerState.ENV_READY: {
             WorkerState.RECORDING,
             WorkerState.RESETTING,
-            WorkerState.EXPORTING,
             WorkerState.STOPPING,
         },
         WorkerState.RECORDING: {
@@ -695,8 +694,7 @@ class IsaacLabWorker:
             WorkerState.STOPPING,
         },
         WorkerState.SAVING: {WorkerState.QC, WorkerState.FAILED, WorkerState.STOPPING},
-        WorkerState.QC: {WorkerState.EXPORTING, WorkerState.ENV_READY, WorkerState.FAILED, WorkerState.STOPPING},
-        WorkerState.EXPORTING: {WorkerState.ENV_READY, WorkerState.FAILED, WorkerState.STOPPING},
+        WorkerState.QC: {WorkerState.ENV_READY, WorkerState.FAILED, WorkerState.STOPPING},
         WorkerState.STOPPING: {WorkerState.STOPPING},
         WorkerState.FAILED: {WorkerState.STOPPING},
     }
@@ -708,7 +706,6 @@ class IsaacLabWorker:
         runtime: Any | None = None,
         recorder_factory: Callable[[], Any] | None = None,
         warmup_steps: int = 5,
-        export_callback: Callable[[Path, SessionConfig, dict[str, Any]], Any] | None = None,
     ) -> None:
         """Initialize worker with session configuration.
 
@@ -721,7 +718,6 @@ class IsaacLabWorker:
         self._warmup_steps = int(warmup_steps)
         if self._warmup_steps < 0:
             raise ValueError("warmup_steps cannot be negative")
-        self._export_callback = export_callback
         self._state = WorkerState.IDLE
         self._env = None
         self._app_launcher = None
@@ -732,10 +728,8 @@ class IsaacLabWorker:
         self._active_episode_metadata: dict[str, Any] | None = None
         self._recording_faults: list[str] = []
         self._last_saved_path: Path | None = None
-        self._last_saved_metadata: dict[str, Any] | None = None
         self._last_quarantined_path: Path | None = None
         self._last_qc_failure_reasons: tuple[str, ...] = ()
-        self._last_export_error = ""
         self._teleop_transport: Any | None = None
         self._next_control_tick = 0.0
         self._worker_step_index = 0
@@ -789,7 +783,6 @@ class IsaacLabWorker:
                 ),
                 "steps": int(getattr(self._recorder, "num_steps", 0)),
                 "last_saved_path": str(self._last_saved_path or ""),
-                "last_export_error": self._last_export_error,
                 "last_quarantined_path": str(self._last_quarantined_path or ""),
                 "last_qc_failure_reasons": list(self._last_qc_failure_reasons),
                 "recording_faults": list(self._recording_faults),
@@ -988,8 +981,6 @@ class IsaacLabWorker:
                     else "Worker 遥操作状态通道不可用"
                 )
                 raise RuntimeError(f"VR sidecar 未就绪，不能开始 Episode：{detail}")
-        if self._last_saved_path is not None and self._last_export_error:
-            raise RuntimeError("上一个 Episode 的 LeRobot 导出仍未完成；请先重试导出")
         if self._recorder is None:
             if self._recorder_factory is None:
                 from mrs_robot_lab.recorders.episode_controller import EpisodeController
@@ -1026,9 +1017,9 @@ class IsaacLabWorker:
         logger.info("Recording stopped")
 
     def save_episode(self, output_path: str | Path | None = None) -> Path:
-        """Save current episode (HDF5, QC, export to LeRobot).
+        """Save the current episode as HDF5 and run its quality check.
 
-        Transitions: RECORDING → SAVING → QC → EXPORTING → ENV_READY
+        Transitions: RECORDING → SAVING → QC → ENV_READY
 
         Returns:
             Path to saved episode HDF5 file.
@@ -1050,10 +1041,8 @@ class IsaacLabWorker:
                 )
             # Status paths describe the latest save attempt, not an older episode.
             self._last_saved_path = None
-            self._last_saved_metadata = None
             self._last_quarantined_path = None
             self._last_qc_failure_reasons = ()
-            self._last_export_error = ""
             self._transition_to(WorkerState.SAVING)
             hdf5_path = self._save_hdf5(output_path)
 
@@ -1078,20 +1067,9 @@ class IsaacLabWorker:
                 return hdf5_path
 
             self._last_saved_path = hdf5_path
-            self._last_saved_metadata = dict(self._active_episode_metadata or {})
             self._active_episode_metadata = None
-            self._transition_to(WorkerState.EXPORTING)
-            try:
-                self._export_lerobot(hdf5_path)
-            except Exception as error:
-                self._last_export_error = str(error)
-                logger.exception("Episode is valid HDF5 but LeRobot export failed: %s", hdf5_path)
-                self._transition_to(WorkerState.ENV_READY)
-                return hdf5_path
-
-            self._last_export_error = ""
             self._transition_to(WorkerState.ENV_READY)
-            logger.info(f"Episode saved and exported: {hdf5_path}")
+            logger.info(f"Episode saved as HDF5: {hdf5_path}")
             return hdf5_path
 
         except Exception as e:
@@ -1099,29 +1077,6 @@ class IsaacLabWorker:
             self._failure_reason = str(e)
             self._transition_to(WorkerState.FAILED)
             raise RuntimeError(f"Episode save failed: {e}") from e
-
-    def retry_export(self) -> Path:
-        """Retry LeRobot export for the most recently QC-approved HDF5 episode."""
-        if self._state != WorkerState.ENV_READY:
-            raise RuntimeError(f"Cannot retry export from state: {self._state.value}")
-        if self._last_saved_path is None or self._last_saved_metadata is None:
-            raise RuntimeError("没有可重试导出的已质检 HDF5 Episode")
-        if not self._last_export_error:
-            raise RuntimeError("最近的 Episode 没有待重试的 LeRobot 导出")
-
-        hdf5_path = self._last_saved_path
-        self._transition_to(WorkerState.EXPORTING)
-        try:
-            self._export_lerobot(hdf5_path)
-        except Exception as error:
-            self._last_export_error = str(error)
-            self._transition_to(WorkerState.ENV_READY)
-            raise RuntimeError(f"LeRobot export retry failed: {error}") from error
-
-        self._last_export_error = ""
-        self._transition_to(WorkerState.ENV_READY)
-        logger.info("LeRobot export retry succeeded: %s", hdf5_path)
-        return hdf5_path
 
     @staticmethod
     def _quarantine_hdf5(hdf5_path: Path) -> Path:
@@ -1220,7 +1175,6 @@ class IsaacLabWorker:
             WorkerState.RECORDING: "正在录制",
             WorkerState.SAVING: "正在保存...",
             WorkerState.QC: "正在质量检查...",
-            WorkerState.EXPORTING: "正在导出到 LeRobot...",
             WorkerState.STOPPING: "正在停止...",
             WorkerState.FAILED: (
                 f"失败：{self._failure_reason}" if self._failure_reason else "失败"
@@ -1243,7 +1197,6 @@ class IsaacLabWorker:
             WorkerState.RECORDING: 1.0,
             WorkerState.SAVING: 0.3,
             WorkerState.QC: 0.6,
-            WorkerState.EXPORTING: 0.9,
             WorkerState.STOPPING: 0.5,
             WorkerState.FAILED: 0.0,
         }
@@ -1309,8 +1262,6 @@ class IsaacLabWorker:
             return self.get_status()
         if command == "save":
             return self.save_episode(payload.get("output_path"))
-        if command == "export":
-            return self.retry_export()
         if command == "discard":
             self.discard_episode()
             return self.get_status()
@@ -1516,14 +1467,3 @@ class IsaacLabWorker:
             return False
         return True
 
-    def _export_lerobot(self, hdf5_path: Path) -> None:
-        """Export HDF5 to LeRobot format."""
-        if self._export_callback is None:
-            raise RuntimeError(
-                "LeRobot 自动追加适配器尚未配置；HDF5 已保留，不能伪报导出成功"
-            )
-        self._export_callback(
-            hdf5_path,
-            self._config,
-            dict(self._active_episode_metadata or self._last_saved_metadata or {}),
-        )

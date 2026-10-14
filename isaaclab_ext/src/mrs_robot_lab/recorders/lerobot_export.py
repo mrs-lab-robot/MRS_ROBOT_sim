@@ -42,6 +42,14 @@ LEROBOT_ACTION_NAMES = (
     "chassis.kin_wz",
 )
 LEROBOT_STATE_NAMES = tuple(f"{name}.pos" for name in LEROBOT_JOINT_ORDER)
+LEROBOT_LIO_STATE_NAMES = (
+    "chassis.lio_odom_x",
+    "chassis.lio_odom_y",
+    "chassis.lio_odom_theta",
+    "chassis.lio_vx",
+    "chassis.lio_vy",
+    "chassis.lio_wz",
+)
 _CAMERA_KEY_NAMES = {
     "base_d435": "base",
     "head_d435": "head",
@@ -61,6 +69,9 @@ _EPISODE_PROVENANCE_FIELDS = frozenset(
         "scene_id",
         "task_id",
         "dataset_id",
+        "data_mode",
+        "lio_source",
+        "enable_lidar",
         "episode_schema_version",
         "quality_status",
         "success",
@@ -87,6 +98,7 @@ def load_arena_hdf5_frames(
     *,
     fps: int,
     task: str,
+    state_dim: int = 19,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     """Read current or legacy HDF5 episodes into LeRobot feature frames."""
     import h5py
@@ -115,6 +127,8 @@ def load_arena_hdf5_frames(
             )
             joint_positions = episode["joint_position"][:].astype(np.float32)
             next_joint_positions = episode["next_joint_position"][:].astype(np.float32)
+            lio_pose = episode["lio_pose"][:].astype(np.float32) if "lio_pose" in episode else None
+            lio_velocity = episode["lio_velocity"][:].astype(np.float32) if "lio_velocity" in episode else None
             camera_group = episode["camera_frames"]
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise ValueError(f"Arena HDF5 episode is missing required data: {error}") from error
@@ -122,6 +136,37 @@ def load_arena_hdf5_frames(
         if len(joint_order) != len(JOINT_STATE_NAMES) or set(joint_order) != set(JOINT_STATE_NAMES):
             raise ValueError("HDF5 joint_state_order does not match the OpenFlex embodiment contract")
         sample_count = len(state_times)
+        if int(state_dim) not in (19, 25):
+            raise ValueError("LeRobot observation.state must use the 19D or 25D OpenFlex schema")
+        if int(state_dim) == 25:
+            if lio_pose is None or lio_velocity is None:
+                if metadata.get("data_mode") == "lidar_lio":
+                    raise ValueError(
+                        "lidar_lio 模式的 FAST-LIO2 输出尚未接入 Arena 录制器；"
+                        "当前实验性采集不能转换为 25 维，请改选 19 维 schema。"
+                    )
+                raise ValueError(
+                    "Arena HDF5 缺少 LIO 字段 lio_pose/lio_velocity，无法按 25 维 schema 转换；"
+                    "请改选 19 维 schema 或使用含 LIO 的新采集数据。"
+                )
+            if lio_pose.shape != (sample_count, 3) or lio_velocity.shape != (sample_count, 3):
+                raise ValueError("Arena HDF5 LIO 字段必须与 sim_time_ns 对齐且各为 3 维")
+            initial_x, initial_y, initial_theta = lio_pose[0]
+            delta_x = lio_pose[:, 0] - initial_x
+            delta_y = lio_pose[:, 1] - initial_y
+            cos_theta = np.cos(initial_theta)
+            sin_theta = np.sin(initial_theta)
+            lio_pose = np.stack(
+                (
+                    cos_theta * delta_x + sin_theta * delta_y,
+                    -sin_theta * delta_x + cos_theta * delta_y,
+                    np.arctan2(
+                        np.sin(lio_pose[:, 2] - initial_theta),
+                        np.cos(lio_pose[:, 2] - initial_theta),
+                    ),
+                ),
+                axis=-1,
+            ).astype(np.float32)
         if (
             sample_count == 0
             or actions.shape != (sample_count, ACTION_DIMENSION)
@@ -187,6 +232,10 @@ def load_arena_hdf5_frames(
             _CAMERA_KEY_NAMES[camera_name]: frames[0]
             for camera_name, frames in images_by_camera.items()
         }
+        state_names = (
+            LEROBOT_STATE_NAMES + LEROBOT_LIO_STATE_NAMES
+            if int(state_dim) == 25 else LEROBOT_STATE_NAMES
+        )
         features: dict[str, dict[str, Any]] = {
             "action": {
                 "dtype": "float32",
@@ -195,8 +244,8 @@ def load_arena_hdf5_frames(
             },
             "observation.state": {
                 "dtype": "float32",
-                "shape": (len(LEROBOT_STATE_NAMES),),
-                "names": list(LEROBOT_STATE_NAMES),
+                "shape": (len(state_names),),
+                "names": list(state_names),
             },
         }
         for camera_name, image in first_images.items():
@@ -228,11 +277,13 @@ def load_arena_hdf5_frames(
             if base_width != 3:
                 raise ValueError("OpenFlex base action must contain vx, vy and wz")
             action_values.extend(applied_targets[sample_index, base_start:base_start + base_width])
+            state_values = [state_by_name[name] for name in LEROBOT_JOINT_ORDER]
+            if int(state_dim) == 25:
+                state_values.extend(lio_pose[sample_index])
+                state_values.extend(lio_velocity[sample_index])
             frame = {
                 "action": np.asarray(action_values, dtype=np.float32),
-                "observation.state": np.asarray(
-                    [state_by_name[name] for name in LEROBOT_JOINT_ORDER], dtype=np.float32
-                ),
+                "observation.state": np.asarray(state_values, dtype=np.float32),
                 "timestamp": (timestamp - first_timestamp) / 1_000_000_000.0,
                 "task": task_name,
             }
@@ -250,11 +301,14 @@ def export_arena_hdf5_to_lerobot(
     *,
     fps: int,
     task: str,
+    state_dim: int = 19,
 ) -> Path:
     """Create one LeRobot dataset episode from a saved Arena HDF5 episode."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-    frames, features = load_arena_hdf5_frames(source_path, fps=fps, task=task)
+    frames, features = load_arena_hdf5_frames(
+        source_path, fps=fps, task=task, state_dim=state_dim
+    )
     return _write_lerobot_dataset(
         frames,
         features,
@@ -271,6 +325,7 @@ def append_hdf5_episode_to_lerobot(
     *,
     fps: int,
     task: str,
+    state_dim: int = 19,
     dataset_class=None,
 ) -> Path:
     """Create or append one QC-approved HDF5 episode to a LeRobot dataset.
@@ -305,7 +360,9 @@ def append_hdf5_episode_to_lerobot(
     if not episode_id or len(episode_id) > 128:
         raise ValueError("episode metadata must contain a non-empty episode_id")
 
-    frames, features = load_arena_hdf5_frames(source, fps=int(fps), task=task)
+    frames, features = load_arena_hdf5_frames(
+        source, fps=int(fps), task=task, state_dim=state_dim
+    )
     source_digest = _sha256_file(source)
     return _append_lerobot_episode_frames(
         frames,
@@ -552,9 +609,18 @@ def _open_or_create_lerobot_dataset(
 
 def _feature_signature(features: dict[str, dict[str, Any]]) -> dict[str, tuple]:
     signature = {}
+    automatic_features = {
+        "timestamp",
+        "frame_index",
+        "episode_index",
+        "index",
+        "task_index",
+    }
     for name, feature in features.items():
+        if name in automatic_features:
+            continue
         shape = tuple(feature.get("shape", ()))
-        names = tuple(feature.get("names", ()))
+        names = tuple(feature.get("names") or ())
         signature[name] = (str(feature.get("dtype", "")), shape, names)
     return signature
 
@@ -611,6 +677,7 @@ def prepare_arena_hdf5_for_lerobot(
     *,
     fps: int,
     task: str,
+    state_dim: int = 19,
     source_reference: str | None = None,
 ) -> Path:
     """Extract an HDF5 episode into a compact, Python-version-neutral staging directory."""
@@ -619,7 +686,9 @@ def prepare_arena_hdf5_for_lerobot(
     from PIL import Image
 
     source = Path(source_path).expanduser().resolve(strict=True)
-    frames, features = load_arena_hdf5_frames(source, fps=fps, task=task)
+    frames, features = load_arena_hdf5_frames(
+        source, fps=fps, task=task, state_dim=state_dim
+    )
     with h5py.File(source, "r") as episode:
         raw_metadata = episode.attrs.get("metadata_json", "{}")
         if isinstance(raw_metadata, bytes):
@@ -677,6 +746,8 @@ def prepare_arena_hdf5_for_lerobot(
         "source_sha256": source_digest,
         "fps": int(fps),
         "task": str(task).strip(),
+        "state_dim": int(state_dim),
+        "state_names": features["observation.state"]["names"],
         "frame_count": len(frames),
         "cameras": cameras,
         "source_reference": _portable_source_reference(source_reference or source.name),
@@ -696,6 +767,7 @@ def append_prepared_episode_to_lerobot(
     *,
     fps: int,
     task: str,
+    state_dim: int | None = None,
     dataset_class=None,
 ) -> Path:
     """Append Python-version-neutral staging data without requiring HDF5 support."""
@@ -715,6 +787,14 @@ def append_prepared_episode_to_lerobot(
         frame_count = int(manifest["frame_count"])
         staged_fps = int(manifest["fps"])
         staged_task = str(manifest["task"])
+        state_names = tuple(
+            str(name) for name in manifest.get("state_names", LEROBOT_STATE_NAMES)
+        )
+        state_dim = int(manifest.get("state_dim", len(state_names)))
+        state_names = tuple(
+            str(name) for name in manifest.get("state_names", LEROBOT_STATE_NAMES)
+        )
+        staged_state_dim = int(manifest.get("state_dim", len(state_names)))
         episode_id = str(manifest["episode_id"]).strip()
         raw_provenance = manifest.get("provenance", {})
         source_digest = str(manifest.get("source_sha256", ""))
@@ -727,6 +807,10 @@ def append_prepared_episode_to_lerobot(
         raise ValueError("unsupported MRS Robot LeRobot staging format")
     if staged_fps != int(fps) or staged_task != str(task).strip():
         raise ValueError("LeRobot export settings do not match the prepared episode")
+    if state_dim is not None and int(state_dim) != staged_state_dim:
+        raise ValueError("LeRobot schema does not match the prepared episode")
+    if staged_state_dim not in (19, 25) or len(state_names) != staged_state_dim:
+        raise ValueError("prepared observation.state must use the 19D or 25D OpenFlex schema")
     if not episode_id or len(episode_id) > 128:
         raise ValueError("prepared episode must contain a valid episode_id")
     if not isinstance(raw_provenance, dict):
@@ -741,7 +825,7 @@ def append_prepared_episode_to_lerobot(
     timestamps = np.load(prepared / "timestamp.npy", mmap_mode="r", allow_pickle=False)
     if (
         actions.shape != (frame_count, len(LEROBOT_ACTION_NAMES))
-        or states.shape != (frame_count, len(LEROBOT_STATE_NAMES))
+        or states.shape != (frame_count, staged_state_dim)
         or timestamps.shape != (frame_count,)
     ):
         raise ValueError("prepared action/state arrays have inconsistent dimensions")
@@ -758,8 +842,8 @@ def append_prepared_episode_to_lerobot(
         },
         "observation.state": {
             "dtype": "float32",
-            "shape": (len(LEROBOT_STATE_NAMES),),
-            "names": list(LEROBOT_STATE_NAMES),
+            "shape": (staged_state_dim,),
+            "names": list(state_names),
         },
     }
     images_by_camera: dict[str, list[Any]] = {}
@@ -845,7 +929,7 @@ def export_prepared_episode_to_lerobot(
     timestamps = np.load(prepared / "timestamp.npy", mmap_mode="r", allow_pickle=False)
     if (
         actions.shape != (frame_count, len(LEROBOT_ACTION_NAMES))
-        or states.shape != (frame_count, len(LEROBOT_STATE_NAMES))
+        or states.shape != (frame_count, state_dim)
         or timestamps.shape != (frame_count,)
     ):
         raise ValueError("prepared Arena action/state arrays have inconsistent dimensions")
@@ -862,8 +946,8 @@ def export_prepared_episode_to_lerobot(
         },
         "observation.state": {
             "dtype": "float32",
-            "shape": (len(LEROBOT_STATE_NAMES),),
-            "names": list(LEROBOT_STATE_NAMES),
+            "shape": (state_dim,),
+            "names": list(state_names),
         },
     }
     for camera, path in image_paths.items():

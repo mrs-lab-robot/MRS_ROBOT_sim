@@ -68,7 +68,7 @@ class ArenaSensorManager:
     _SENSOR_ID = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
     _ACTIONS = {"create", "destroy"}
 
-    def __init__(self, *, request_timeout_s: float = 30.0) -> None:
+    def __init__(self, *, request_timeout_s: float = 60.0) -> None:
         self._owner_thread = threading.get_ident()
         self._request_timeout_s = max(0.1, float(request_timeout_s))
         self._sensors: dict[str, _Sensor] = {}

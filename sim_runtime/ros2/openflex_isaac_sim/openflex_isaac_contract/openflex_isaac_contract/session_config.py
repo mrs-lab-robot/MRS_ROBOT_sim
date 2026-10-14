@@ -30,7 +30,6 @@ class WorkerState(Enum):
     RECORDING = "recording"
     SAVING = "saving"
     QC = "qc"
-    EXPORTING = "exporting"
     STOPPING = "stopping"
     FAILED = "failed"
 

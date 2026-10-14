@@ -9,8 +9,6 @@ import os
 from pathlib import Path
 import signal
 import sys
-import subprocess
-import tempfile
 import threading
 import time
 from typing import Any, Callable
@@ -38,121 +36,6 @@ def _load_config(args: argparse.Namespace) -> SessionConfig:
     if not isinstance(payload, dict):
         raise ValueError("SessionConfig 必须是 JSON 对象")
     return SessionConfig.from_dict(payload)
-
-
-def create_lerobot_export_callback(
-    *,
-    subprocess_runner: Callable[..., Any] | None = None,
-    prepare_episode: Callable[..., Path] | None = None,
-) -> Callable[[Path, SessionConfig, dict[str, Any]], Path]:
-    """Bridge Isaac Lab's HDF5 runtime to the configured LeRobot Python.
-
-    HDF5 decoding and staging happen in the Isaac Lab process, where h5py is
-    available. The selected LeRobot interpreter receives only NumPy/JPEG
-    staging files, so the two runtime environments need not share packages.
-    """
-    if subprocess_runner is None:
-        subprocess_runner = subprocess.run
-    if prepare_episode is None:
-        from mrs_robot_lab.recorders.lerobot_export import prepare_arena_hdf5_for_lerobot
-
-        prepare_episode = prepare_arena_hdf5_for_lerobot
-
-    def export_episode(
-        hdf5_path: Path,
-        config: SessionConfig,
-        _metadata: dict[str, Any],
-    ) -> Path:
-        required = {
-            "simulation_repo_root": config.simulation_repo_root,
-            "lerobot_python": config.lerobot_python,
-            "dataset_root": config.dataset_root,
-            "dataset_id": config.dataset_id,
-        }
-        missing = sorted(name for name, value in required.items() if not str(value).strip())
-        if missing:
-            raise ValueError("LeRobot 导出配置缺少：" + ", ".join(missing))
-
-        source = Path(hdf5_path).expanduser().resolve(strict=True)
-        source_reference = source.name
-        if config.episode_root.strip():
-            episode_root = Path(config.episode_root).expanduser().resolve()
-            try:
-                source_reference = source.relative_to(episode_root).as_posix()
-            except ValueError:
-                # The source may be imported from an external location. Keep
-                # only its basename rather than persisting a host-specific path.
-                pass
-        simulation_root = Path(config.simulation_repo_root).expanduser()
-        dataset_root = Path(config.dataset_root).expanduser()
-        repo_id = config.dataset_id.strip()
-        task_id = config.task_id.strip()
-        fps = int(round(config.frequency.output_fps))
-
-        package_paths = (
-            str(simulation_root / "isaaclab_ext" / "src"),
-            str(
-                simulation_root
-                / "sim_runtime"
-                / "ros2"
-                / "openflex_isaac_sim"
-                / "openflex_isaac_contract"
-            ),
-        )
-        environment = os.environ.copy()
-        environment["MRS_ROBOT_SIM_ROOT"] = str(simulation_root)
-        # The selected interpreter must not import Isaac Lab/Kit's Python
-        # packages from the parent process. Only expose the framework-neutral
-        # MRS sources; the LeRobot interpreter owns all third-party packages.
-        environment["PYTHONPATH"] = os.pathsep.join(package_paths)
-
-        with tempfile.TemporaryDirectory(
-            prefix=".lerobot-staging-",
-            dir=source.parent,
-        ) as staging_root:
-            prepared_directory = Path(staging_root) / "episode"
-            prepared_episode = prepare_episode(
-                source,
-                prepared_directory,
-                fps=fps,
-                task=task_id,
-                source_reference=source_reference,
-            )
-            command = [
-                str(Path(config.lerobot_python).expanduser()),
-                "-m",
-                "mrs_robot_lab.recorders.lerobot_export_cli",
-                "--prepared-directory",
-                str(prepared_episode),
-                "--dataset-root",
-                str(dataset_root),
-                "--repo-id",
-                repo_id,
-                "--fps",
-                str(fps),
-                "--task",
-                task_id,
-            ]
-            try:
-                completed = subprocess_runner(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    timeout=1200,
-                    check=False,
-                    env=environment,
-                )
-            except subprocess.TimeoutExpired as error:
-                raise RuntimeError("LeRobot 导出超过 20 分钟，HDF5 已保留，可重试导出") from error
-            if completed.returncode != 0:
-                detail = (completed.stderr or completed.stdout or "无进程错误输出").strip()
-                raise RuntimeError(
-                    f"LeRobot Python 导出失败 (exit={completed.returncode}): {detail[-4000:]}"
-                )
-
-        return dataset_root.joinpath(*repo_id.split("/"))
-
-    return export_episode
 
 
 def preflight_result(
@@ -194,7 +77,6 @@ def _update_api_status(server: Any, status: WorkerStatus) -> None:
         recording=state == WorkerState.RECORDING.value,
         steps=int(metadata.get("steps", 0)),
         last_saved_path=str(metadata.get("last_saved_path", "")),
-        last_export_error=str(metadata.get("last_export_error", "")),
         last_quarantined_path=str(metadata.get("last_quarantined_path", "")),
         last_qc_failure_reasons=list(metadata.get("last_qc_failure_reasons", ())),
         teleop_mode=str(metadata.get("teleop_mode", "")),
@@ -308,10 +190,7 @@ def main(argv: list[str] | None = None) -> int:
         print("ISAACLAB_WORKER_ERROR API 端口必须在 1 到 65535 之间", file=sys.stderr, flush=True)
         return 2
 
-    worker = IsaacLabWorker(
-        config,
-        export_callback=create_lerobot_export_callback(),
-    )
+    worker = IsaacLabWorker(config)
     try:
         worker.configure()
     except Exception as error:

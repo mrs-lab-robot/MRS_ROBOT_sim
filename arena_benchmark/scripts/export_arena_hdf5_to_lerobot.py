@@ -26,9 +26,11 @@ def main() -> int:
     parser.add_argument("--prepared-output", help="write an HDF5-free staging directory")
     parser.add_argument("--prepared-dir", help="read a prepared HDF5-free staging directory")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--append-prepared", action="store_true")
     parser.add_argument("--output-root", help="LeRobot dataset root")
     parser.add_argument("--repo-id", help="LeRobot dataset ID")
     parser.add_argument("--fps", type=int, required=True)
+    parser.add_argument("--state-dim", type=int, choices=(19, 25), default=19)
     parser.add_argument("--task", required=True, help="LeRobot task description")
     args = parser.parse_args()
 
@@ -43,13 +45,27 @@ def main() -> int:
             args.prepared_output,
             fps=args.fps,
             task=args.task,
+            state_dim=args.state_dim,
         )
         print(f"ARENA_LEROBOT_PREPARE_OK path={destination}", flush=True)
         return 0
 
     if not args.output_root or not args.repo_id:
         parser.error("dataset export requires --output-root and --repo-id")
-    if args.prepared_dir:
+    if args.prepared_dir and args.append_prepared:
+        if args.source or args.prepared_output:
+            parser.error("--append-prepared cannot be combined with HDF5 input options")
+        from mrs_robot_lab.recorders.lerobot_export import append_prepared_episode_to_lerobot
+
+        destination = append_prepared_episode_to_lerobot(
+            args.prepared_dir,
+            args.output_root,
+            args.repo_id,
+            fps=args.fps,
+            task=args.task,
+            state_dim=args.state_dim,
+        )
+    elif args.prepared_dir:
         if args.source or args.prepared_output:
             parser.error("--prepared-dir cannot be combined with HDF5 input options")
         from mrs_robot_lab.recorders.lerobot_export import export_prepared_episode_to_lerobot
@@ -60,6 +76,7 @@ def main() -> int:
             args.repo_id,
             fps=args.fps,
             task=args.task,
+            state_dim=args.state_dim,
         )
     else:
         if not args.source or args.prepared_output:

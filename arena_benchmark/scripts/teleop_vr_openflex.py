@@ -9,6 +9,7 @@ import json
 import math
 import socket
 import sys
+import threading
 import time
 from datetime import datetime
 from fractions import Fraction
@@ -153,6 +154,30 @@ def _joint_state(robot, field: str) -> tuple[list[float], dict[str, float]]:
     return ordered, by_name
 
 
+def _lio_state(robot, env) -> tuple[list[float], list[float]]:
+    from mrs_arena.adapters.navigation_observation import _torch_view
+    from mrs_arena.tasks.navigation_logic import quaternion_xyzw_to_yaw
+
+    data = robot.data
+    position = _torch_view(data.root_pos_w, field_name="root_pos_w")
+    orientation = _torch_view(data.root_quat_w, field_name="root_quat_w")
+    origins = _torch_view(env.unwrapped.scene.env_origins, field_name="env_origins")
+    linear_velocity = _torch_view(data.root_lin_vel_b, field_name="root_lin_vel_b")
+    angular_velocity = _torch_view(data.root_ang_vel_b, field_name="root_ang_vel_b")
+    yaw = quaternion_xyzw_to_yaw(orientation)
+    pose = [
+        float(position[0, 0] - origins[0, 0]),
+        float(position[0, 1] - origins[0, 1]),
+        float(yaw[0]),
+    ]
+    velocity = [
+        float(linear_velocity[0, 0]),
+        float(linear_velocity[0, 1]),
+        float(angular_velocity[0, 2]),
+    ]
+    return pose, velocity
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--command-host", default="127.0.0.1")
@@ -162,6 +187,12 @@ def main() -> None:
     parser.add_argument("--camera-stream-host", default="127.0.0.1")
     _add_positive_finite_float_option(parser, "--watchdog-timeout", default=0.25)
     parser.add_argument("--record-dir", default="outputs/datasets")
+    parser.add_argument(
+        "--data-mode",
+        choices=("ground_truth", "lidar_lio", "ros2_direct"),
+        default="ground_truth",
+    )
+    parser.add_argument("--enable-lidar", action="store_true")
     parser.add_argument("--task-yaml", default="", help="IsaacLab-Arena task graph YAML to load")
     parser.add_argument("--scene-yaml", default="", help="IsaacLab-Arena scene graph YAML to load with NoTask")
     parser.add_argument("--task-id", default="", help="First-party OpenFlex task registry ID")
@@ -396,6 +427,15 @@ def main() -> None:
         session_metadata = {
             "schema_version": 1,
             "backend": "arena",
+            "data_mode": args.data_mode,
+            "enable_lidar": bool(args.enable_lidar),
+            "lio_source": (
+                "arena_ground_truth"
+                if args.data_mode == "ground_truth"
+                else "fastlio2_unavailable"
+                if args.data_mode == "lidar_lio"
+                else None
+            ),
             "task_id": args.task_id or None,
             "scene_id": args.scene_id or None,
             "task_yaml": args.task_yaml or None,
@@ -495,6 +535,13 @@ def main() -> None:
         sensor_manager.mark_ready(error=sensor_preparation_error)
         sensor_api = ArenaSensorControlServer(sensor_manager, host="127.0.0.1", port=8086)
         sensor_api.start()
+        if args.enable_lidar:
+            for sensor_id in ("lidar", "imu"):
+                threading.Thread(
+                    target=sensor_manager.request,
+                    args=(sensor_id, "create"),
+                    daemon=True,
+                ).start()
         print(
             f"VR_TELEOP_GUI_READY command={link.command_address[0]}:{link.command_address[1]} "
             f"state={args.state_host}:{args.state_port} action_dim={action_shape[-1]}",
@@ -510,6 +557,7 @@ def main() -> None:
                 ready=True,
                 recording=recorder.state is EpisodeState.RECORDING,
                 steps=recorder.num_steps,
+                duration_seconds=recorder.num_steps * step_dt,
                 last_saved_path=last_saved_path,
                 message=message if message is not None else current_status,
             )
@@ -582,6 +630,8 @@ def main() -> None:
                         "scene_id": args.scene_id,
                         "task_yaml": args.task_yaml,
                         "scene_yaml": args.scene_yaml,
+                        "data_mode": args.data_mode,
+                        "lio_source": session_metadata["lio_source"],
                         "random_seed": args.seed,
                         "randomization": args.reset_randomization,
                         "session_metadata": session_metadata,
@@ -633,6 +683,10 @@ def main() -> None:
 
             joint_position_before, current_by_name = _joint_state(robot, "joint_pos")
             joint_velocity_before, _ = _joint_state(robot, "joint_vel")
+            if args.data_mode == "ground_truth":
+                lio_pose_before, lio_velocity_before = _lio_state(robot, env)
+            else:
+                lio_pose_before, lio_velocity_before = None, None
             incoming = link.receive_latest() if synthetic_source is None else None
             if synthetic_source is not None:
                 if not synthetic_started:
@@ -724,6 +778,8 @@ def main() -> None:
                     command_seq=command.seq if command else 0,
                     raw_command=command.to_dict() if command else {},
                     camera_frames=recorded_camera_frames,
+                    lio_pose=lio_pose_before,
+                    lio_velocity=lio_velocity_before,
                 )
                 if sim_step % 15 == 0:
                     update_capture_status()
