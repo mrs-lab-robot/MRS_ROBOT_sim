@@ -57,11 +57,12 @@ class RobotControlLaunchTest(unittest.TestCase):
         )
 
         self.assertIn('"Profile01_20Hz_0p5deg"', text)
-        self.assertNotIn('"omni:sensor:Core:patternFiringRateHz": 20000', text)
-        self.assertNotIn('"omni:sensor:Core:patternFiringRateHz": 36000', text)
-        self.assertIn('"omni:sensor:Core:nearRangeM": 0.1', text)
-        self.assertIn('"omni:sensor:Core:farRangeM": 40.0', text)
-        self.assertIn('"OPENFLEX_ISAAC_LIDAR_CONFIG", "Example_Rotary"', text)
+        self.assertIn('"omni:sensor:Core:patternFiringRateHz": 20000', text)
+        self.assertIn('"omni:sensor:Core:patternFiringRateHz": 36000', text)
+        self.assertNotIn('"omni:sensor:Core:nearRangeM": 0.1', text)
+        self.assertNotIn('"omni:sensor:Core:farRangeM": 40.0', text)
+        self.assertIn('"OPENFLEX_ISAAC_LIDAR_CONFIG", "MID360_APPROX"', text)
+        self.assertNotIn('"OPENFLEX_ISAAC_LIDAR_CONFIG", "Example_Rotary"', text)
         self.assertIn('mount_mode: str = "parented"', text)
 
     def test_controller_target_is_90_hz(self) -> None:

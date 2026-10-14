@@ -231,7 +231,7 @@ def create_robot_sensor_suite(
     camera_config = load_realsense_config(realsense_root) if enable_cameras else {}
     lidar_config = load_mid360_config(mid360_root) if enable_lidar else {}
     lidar_sensor_config = lidar_config.get("sensor", {}) or {}
-    lidar_model_config = str(lidar_sensor_config.get("default_profile", "Example_Rotary"))
+    lidar_model_config = str(lidar_sensor_config.get("default_profile", "MID360_APPROX"))
     lidar_profile = str(
         lidar_profile
         or lidar_sensor_config.get("performance_profile")

@@ -75,11 +75,11 @@ DRIVE_PROFILES: dict[str, dict[str, str]] = {
     "finger": {"stiffness": "10000000.0", "damping": "50000.0", "joint_friction": "1.0"},
     "head": {"stiffness": "30000000.0", "damping": "100000.0", "joint_friction": "2.0"},
 }
-# Isaac Sim 6 creates the generic OmniLidar asset first; launch_sensor.py then
-# authors the MID360 approximation attributes on that prim.
+# The stable chain always runs the MID360 approximation (multiScan165
+# Profile01_20Hz_0p5deg); Example_Rotary is retired and redirects to it.
 LIVOX_APPROX_LIDAR_CONFIG = os.environ.get(
-    "OPENFLEX_ISAAC_LIDAR_CONFIG", "Example_Rotary"
-).strip() or "Example_Rotary"
+    "OPENFLEX_ISAAC_LIDAR_CONFIG", "MID360_APPROX"
+).strip() or "MID360_APPROX"
 # Isaac Sim 5.1 URDF camera adjustment point. Values are relative to each
 # camera's parent link and use ROS URDF units: xyz in metres, rpy in radians.
 # RGB and depth sensors for the same physical camera intentionally share a pose.

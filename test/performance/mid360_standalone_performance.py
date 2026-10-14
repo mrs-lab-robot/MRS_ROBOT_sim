@@ -817,7 +817,7 @@ def _markdown(batch_id: str, executed_at: str, args: argparse.Namespace, result:
             f"| 执行者 | {args.executor} |",
             "| 版本 | Isaac Sim 6.0；当前仓库的历史独立 MID360 等效链路 |",
             "| 测试范围 | 静态 `mid360_empty_stage.usda`；不加载机器人、相机、ROS 2 控制或 RViz |",
-            f"| 配置 | `{result.get('profile')}`；`Example_Rotary`；physics/render `{args.physics_hz:g}/{args.render_hz:g} Hz`；headless；`ROS_DOMAIN_ID={args.ros_domain_id}`；兼容桥={'开启' if custom_required else '关闭'} |",
+            f"| 配置 | `{result.get('profile')}`；`MID360_APPROX`；physics/render `{args.physics_hz:g}/{args.render_hz:g} Hz`；headless；`ROS_DOMAIN_ID={args.ros_domain_id}`；兼容桥={'开启' if custom_required else '关闭'} |",
             f"| 并发 Isaac 负载 | {'无' if not concurrent else '有（本批次只作并发诊断，不作独立实时基线）'} |",
             f"| 功能结论 | {functional} |",
             f"| 实时结论 | {realtime} |",

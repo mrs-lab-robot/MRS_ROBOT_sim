@@ -18,6 +18,82 @@ SUPPORTED_PROFILES = {
 # collected. Keep all runtime objects alive for the lifetime of the Kit app.
 _MOUNT_FOLLOWERS: list["_MountedSensorFollower"] = []
 _KINEMATIC_SENSOR_ROOTS: list[object] = []
+
+# PointCloud2 layout for the direct-poll transport. It mirrors what the
+# historical ROS2RtxLidarHelper graph emitted (x/y/z/intensity plus per-point
+# timing and channel), which is exactly the field set the Livox relay's
+# PointCloud2 decoder consumes (x/y/z required; intensity/reflectivity,
+# line/channel/ring, offset_time/timestamp/time optional).
+_POINTCLOUD2_FIELDS = (
+    ("x", "<f4", 0),
+    ("y", "<f4", 4),
+    ("z", "<f4", 8),
+    ("intensity", "<f4", 12),
+    ("offset_time", "<u4", 16),
+    ("line", "u1", 20),
+)
+_POINTCLOUD2_POINT_STEP = 24
+
+
+def gmo_pointcloud2_buffer(parsed: object) -> tuple[bytes, int, int]:
+    """Pack a decoded GenericModelOutput POINTCLOUD into PointCloud2 bytes.
+
+    ``parsed`` is the object returned by
+    ``isaacsim.sensors.experimental.rtx.generic_model_output.getModelOutput-
+    FromBuffer``. Returns ``(packed_bytes, stamp_ns, num_elements)``. Fields
+    missing from this Isaac build degrade to zeros so the relay contract
+    (x/y/z required) still holds.
+    """
+    import numpy as np
+
+    num_elements = int(getattr(parsed, "numElements", 0) or 0)
+    stamp_ns = int(getattr(parsed, "timestampNs", 0) or 0)
+    if num_elements <= 0:
+        return b"", stamp_ns, 0
+    dtype = np.dtype(
+        {
+            "names": ["x", "y", "z", "intensity", "offset_time", "line", "_pad"],
+            "formats": ["<f4", "<f4", "<f4", "<f4", "<u4", "u1", "V3"],
+            "offsets": [0, 4, 8, 12, 16, 20, 21],
+            "itemsize": _POINTCLOUD2_POINT_STEP,
+        }
+    )
+    buffer = np.zeros(num_elements, dtype=dtype)
+
+    def _array(name: str) -> np.ndarray | None:
+        value = getattr(parsed, name, None)
+        if value is None:
+            return None
+        numpy_value = getattr(value, "numpy", None)
+        if callable(numpy_value):
+            try:
+                value = numpy_value()
+            except BaseException:
+                return None
+        try:
+            return np.asarray(value).reshape(-1)
+        except BaseException:
+            return None
+
+    positions = _array("x"), _array("y"), _array("z")
+    for name, values in zip(("x", "y", "z"), positions):
+        if values is not None:
+            available = min(num_elements, values.shape[0])
+            buffer[name][:available] = values[:available]
+    intensity = _array("intensity")
+    if intensity is not None:
+        available = min(num_elements, intensity.shape[0])
+        buffer["intensity"][:available] = intensity[:available]
+    timestamps = _array("timestamp")
+    if timestamps is not None:
+        available = min(num_elements, timestamps.shape[0])
+        clipped = np.clip(np.nan_to_num(timestamps[:available].astype("<f8")), 0, 0xFFFFFFFF)
+        buffer["offset_time"][:available] = clipped.astype("<u4")
+    channels = _array("channelId")
+    if channels is not None:
+        available = min(num_elements, channels.shape[0])
+        buffer["line"][:available] = channels[:available].astype("u1")
+    return buffer.tobytes(), stamp_ns, num_elements
 _LIDAR_RENDER_PRODUCT_HANDLES: list[object] = []
 _LIDAR_SENSOR_HANDLES: list[object] = []
 _IMU_SENSOR_HANDLES: dict[str, object] = {}
@@ -34,18 +110,32 @@ def _enable_stable_ids() -> None:
 
 
 def _resolve_mid360_config(requested_profile: str | None = None) -> tuple[str, dict[str, str] | None]:
-    """Resolve the configured Isaac Sim model and Livox-compatible variant."""
+    """Resolve the configured Isaac Sim model and Livox-compatible variant.
+
+    The stable 2026-09 chain (sensor_validation.md batch
+    20260911-233603: PointCloud2 9.922 Hz, 198 non-empty frames, 58979 points
+    on Isaac Sim 6.0) runs the SICK multiScan165 ``Profile01_20Hz_0p5deg``
+    variant selected by ``MID360_APPROX``. That is the hardcoded default so a
+    missing environment variable can never fall back to a rotary example
+    model. ``Example_Rotary`` is retired and redirects to the stable
+    approximation.
+    """
     requested = (
         requested_profile
         if requested_profile is not None
-        else os.environ.get("OPENFLEX_ISAAC_LIDAR_CONFIG", "Example_Rotary")
+        else os.environ.get("OPENFLEX_ISAAC_LIDAR_CONFIG", "MID360_APPROX")
     ).strip()
-    if requested.upper() in {"MID360_APPROX", "SICK_MULTISCAN165", "MULTISCAN165"}:
+    if requested.upper() in {
+        "MID360_APPROX",
+        "SICK_MULTISCAN165",
+        "MULTISCAN165",
+        "EXAMPLE_ROTARY",
+    }:
         return (
             "multiScan100",
             {"Product": "multiScan165", "Profile": "Profile01_20Hz_0p5deg"},
         )
-    return requested or "Example_Rotary", None
+    return requested or "MID360_APPROX", None
 
 
 def _set_lidar_attributes(stage: object, lidar_path: str, attributes: dict[str, object]) -> None:
@@ -65,21 +155,22 @@ def _set_lidar_attributes(stage: object, lidar_path: str, attributes: dict[str, 
 def _configure_mid360_performance_profile(
     stage: object, lidar_path: str, *, tick_rate_hz: float = 10.0
 ) -> None:
-    """Apply the MID360 range/return limits without changing profile scan cadence.
+    """Apply the validated dense-profile attributes while keeping 20 Hz cadence.
 
-    SICK's selected ``Profile01_20Hz_0p5deg`` authors
-    ``patternFiringRateHz=20``.  Writing ``20000`` here looks like a rate-unit
-    conversion but disables GenericModelOutput on Isaac Sim 6.0.  Keep the
-    variant-authored firing rate and apply only the performance limits.
+    Stable-version behavior (openflex_ws 810-line trunk, the 2026-09-16
+    measured chain): author the 20 kHz pattern firing rate and the
+    single-return limit onto the prim. The default MID360_APPROX chain never
+    reaches this write — ``_configure_profile`` preserves the variant's
+    authored multiScan165 parameters — so this runs only for non-variant
+    models, exactly where the stable version applied it.
     """
     del tick_rate_hz  # the selected sensor variant owns its scan geometry/rate
     _set_lidar_attributes(
         stage,
         lidar_path,
         {
+            "omni:sensor:Core:patternFiringRateHz": 20000,
             "omni:sensor:Core:maxReturns": 1,
-            "omni:sensor:Core:nearRangeM": 0.1,
-            "omni:sensor:Core:farRangeM": 40.0,
         },
     )
 
@@ -87,61 +178,30 @@ def _configure_mid360_performance_profile(
 def _configure_mid360_full_profile(
     stage: object, lidar_path: str, *, tick_rate_hz: float = 10.0
 ) -> None:
-    """Apply full-range limits without overriding the selected variant's scan rate."""
+    """Use the packaged full-density emitter geometry (stable-version write set)."""
     del tick_rate_hz
     _set_lidar_attributes(
         stage,
         lidar_path,
-        {
-            "omni:sensor:Core:nearRangeM": 0.1,
-            "omni:sensor:Core:farRangeM": 40.0,
-        },
+        {"omni:sensor:Core:patternFiringRateHz": 36000},
     )
 
 
 def _create_lidar_render_product(lidar: object, sensor_name: str) -> tuple[str, object | None]:
-    """Create the Isaac RTX render product and retain its Python handles."""
-    # Isaac Sim 5.1's stable LidarRtx wrapper owns the render product itself.
-    # Reuse it instead of trying the Isaac Sim 6 experimental LidarSensor API
-    # or creating a second product from the OmniLidar prim.
-    get_render_product_path = getattr(lidar, "get_render_product_path", None)
-    if callable(get_render_product_path):
-        render_product_path = str(get_render_product_path())
-        if not render_product_path:
-            raise RuntimeError("Isaac LidarRtx did not create a render product")
-        attach_annotator = getattr(lidar, "attach_annotator", None)
-        if not callable(attach_annotator):
-            raise RuntimeError("Isaac LidarRtx does not expose attach_annotator()")
-        attach_annotator("GenericModelOutput")
-        _LIDAR_SENSOR_HANDLES.append(lidar)
-        render_product = getattr(lidar, "render_product", None) or getattr(
-            lidar, "_render_product", None
-        )
-        if render_product is not None:
-            _LIDAR_RENDER_PRODUCT_HANDLES.append(render_product)
-        return render_product_path, lidar
+    """Create the Isaac RTX render product and retain its Python handles.
 
-    try:
-        from isaacsim.sensors.experimental.rtx import LidarSensor
+    Isaac Sim 6's ``isaacsim.sensors.experimental.rtx.LidarSensor`` owns the
+    render product and exposes the sensor-runtime writer/annotator API used by
+    the native PointCloud2 transport.
+    """
+    from isaacsim.sensors.experimental.rtx import LidarSensor
 
-        # The historical working path explicitly registers GenericModelOutput
-        # before the ROS2 helper is evaluated. Without it, discovery can show a
-        # publisher while no PointCloud2 samples arrive.
-        sensor = LidarSensor(lidar, annotators=["generic-model-output"])
-        _LIDAR_SENSOR_HANDLES.append(sensor)
-        render_product = sensor.render_product
-        _LIDAR_RENDER_PRODUCT_HANDLES.append(render_product)
-        return str(render_product.GetPath()), sensor
-    except ImportError:
-        import omni.replicator.core as rep
-
-        render_product = rep.create.render_product(
-            camera=lidar.paths[0],
-            resolution=(128, 128),
-            name=sensor_name + "_lidar",
-        )
-        _LIDAR_RENDER_PRODUCT_HANDLES.append(render_product)
-        return str(render_product.path), None
+    sensor = LidarSensor(lidar, annotators=["generic-model-output"])
+    _LIDAR_SENSOR_HANDLES.append(sensor)
+    render_product = sensor.render_product
+    _LIDAR_RENDER_PRODUCT_HANDLES.append(render_product)
+    render_product_path = str(getattr(render_product, "path", None) or render_product.GetPath())
+    return render_product_path, sensor
 
 
 def _attach_native_pointcloud_writer(
@@ -150,18 +210,67 @@ def _attach_native_pointcloud_writer(
     frame_id: str,
     *,
     object_id_map: bool = True,
-) -> None:
-    """Attach Isaac Sim's native PointCloud2 writer for diagnostics."""
-    sensor.attach_writer(
-        "RtxLidarROS2PublishPointCloud",
-        topicName=topic,
-        frameId=frame_id,
-        outputIntensity=True,
-        outputTimestamp=True,
-        outputEmitterId=True,
-        outputChannelId=True,
-        outputObjectId=bool(object_id_map),
-    )
+) -> str | None:
+    """Attach Isaac Sim's native PointCloud2 writer for diagnostics.
+
+    Returns the attached writer name, or ``None`` when the Isaac Sim 6 sensor
+    runtime registry lacks the writer. The 2026-10-14 01:41 probe recorded the
+    exact failure on Isaac Sim 6.0: ``attach_writer`` raises
+    ``WriterRegistryError: No writer with name `RtxLidarROS2PublishPointCloud`
+    was found in registry.`` (same for the ``IsaacRtxLidarROS2PublishPointCloud``
+    and ``ROS2PublishPointCloud`` aliases). Callers must fall back to the
+    ROS2 helper graph, which is the historically validated publisher.
+    """
+    render_product = sensor.render_product
+    render_product_path = str(getattr(render_product, "path", None) or render_product.GetPath())
+    try:
+        sensor.attach_writer(
+            "RtxLidarROS2PublishPointCloud",
+            topicName=topic,
+            frameId=frame_id,
+            outputIntensity=True,
+            outputTimestamp=True,
+            outputEmitterId=True,
+            outputChannelId=True,
+            outputObjectId=bool(object_id_map),
+        )
+    except Exception as exc:
+        print(
+            "[openflex_isaac_sensors] native PointCloud2 writer unavailable "
+            f"({type(exc).__name__}: {exc}); falling back to the ROS2 helper graph",
+            flush=True,
+        )
+        return None
+    # The helper node mirrors this in OgnROS2RtxLidarHelperInternalState.post_attach.
+    # The registry writer takes no post_attach, so set the auto-created
+    # PostProcessDispatchIsaacSimulationGate step here: without an explicit
+    # step the annotator-side dispatch never ticks and the writer receives no
+    # frames (30s first-frame timeout symptom).
+    _set_native_dispatch_gate_step(render_product_path, _frame_skip_count() + 1)
+    return "RtxLidarROS2PublishPointCloud"
+
+
+def _set_native_dispatch_gate_step(render_product_path: str, publish_step_size: int) -> None:
+    """Author the writer annotator graph's SimulationGate step for one render product."""
+    try:
+        import omni.syntheticdata
+
+        omni.syntheticdata.SyntheticData.Get().set_node_attributes(
+            "PostProcessDispatchIsaacSimulationGate",
+            {"inputs:step": max(1, int(publish_step_size))},
+            render_product_path,
+        )
+        print(
+            "[openflex_isaac_sensors] native writer gate step="
+            f"{max(1, int(publish_step_size))} at {render_product_path}",
+            flush=True,
+        )
+    except Exception as exc:  # pragma: no cover - depends on Isaac runtime
+        print(
+            f"[openflex_isaac_sensors] native writer gate step setup failed: "
+            f"{type(exc).__name__}: {exc}",
+            flush=True,
+        )
 
 
 def _frame_skip_count() -> int:
@@ -432,36 +541,16 @@ def _create_lidar(
         flush=True,
     )
     try:
-        try:
-            from isaacsim.sensors.experimental.rtx import Lidar
-        except ImportError:
-            from isaacsim.sensors.rtx import LidarRtx
+        from isaacsim.sensors.experimental.rtx import Lidar
 
-            stable_config = config
-            stable_kwargs: dict[str, object] = {}
-            if isinstance(variant, Mapping):
-                # 5.1's LidarRtx accepts a shipped product configuration but
-                # does not expose the 6.0 Product/Profile mapping. Select the
-                # closest installed product and retain our explicit profile
-                # attributes below.
-                stable_config = str(variant.get("Product") or config)
-            elif variant:
-                stable_kwargs["variant"] = variant
-            lidar = LidarRtx(
-                prim_path=lidar_path,
-                name="openflex_mid360",
-                config_file_name=stable_config,
-                **stable_kwargs,
-            )
-        else:
-            lidar = Lidar.create(
-                path=lidar_path,
-                config=config,
-                variant=variant,
-                accumulate_outputs=True,
-                aux_output_level="FULL",
-                tick_rate=float(tick_rate_hz),
-            )
+        lidar = Lidar.create(
+            path=lidar_path,
+            config=config,
+            variant=variant,
+            accumulate_outputs=True,
+            aux_output_level="FULL",
+            tick_rate=float(tick_rate_hz),
+        )
     except Exception as exc:
         raise RuntimeError(f"failed to create MID360 at {lidar_path}: {exc}") from exc
     actual_path = _lidar_prim_path(lidar)
@@ -490,9 +579,25 @@ def _lidar_render_product(lidar: object) -> object | None:
 def _configure_profile(
     stage: object, lidar_path: str, profile: str, *, tick_rate_hz: float = 10.0
 ) -> str:
+    """Apply profile attributes with the stable trunk's variant-preservation rule.
+
+    When the model resolves to the multiScan165 variant (the MID360_APPROX
+    default), the variant's authored ``Profile01_20Hz_0p5deg`` parameters are
+    preserved untouched — this is the exact path validated by the 2026-10-14
+    01:41 direct probe (first non-empty GMO at update 6, numElements
+    481-497). Non-variant models receive the stable firing-rate overrides.
+    """
     requested = profile.strip().upper()
     if requested not in SUPPORTED_PROFILES:
         raise ValueError(f"unsupported MID360 profile: {profile}")
+    config, variant = _resolve_mid360_config()
+    if variant is not None:
+        print(
+            f"[openflex_isaac_sensors] Preserving authored LiDAR parameters for "
+            f"config={config}, variant={variant}; rotary firing-rate overrides are disabled",
+            flush=True,
+        )
+        return requested
     if requested in {"MID360_PERFORMANCE", "LIVOX_MID360_PERFORMANCE"}:
         _configure_mid360_performance_profile(stage, lidar_path, tick_rate_hz=tick_rate_hz)
     else:
@@ -884,8 +989,8 @@ def create_robot_mid360(
     requested_profile = profile.strip().upper()
     if requested_profile not in SUPPORTED_PROFILES:
         raise ValueError(f"unsupported MID360 profile: {profile}")
-    if transport not in {"helper", "native"}:
-        raise ValueError("MID360 transport must be 'helper' or 'native'")
+    if transport not in {"helper", "native", "direct_poll"}:
+        raise ValueError("MID360 transport must be 'helper', 'native', or 'direct_poll'")
     if mount_mode not in {"parented", "follow", "fixed_kinematic", "fixed"}:
         raise ValueError(
             "MID360 mount_mode must be 'parented', 'follow', 'fixed_kinematic', or 'fixed'"
@@ -950,12 +1055,63 @@ def create_robot_mid360(
             })
         if sensor is None:
             raise RuntimeError("native MID360 transport requires the Isaac Sim LidarSensor API")
-        _attach_native_pointcloud_writer(
-            sensor, topic, frame_id, object_id_map=object_id_map
+        # Stable-version transport resolution: try the native registry writer
+        # first; Isaac Sim 6 removed it from the registry (WriterRegistryError,
+        # probe evidence 2026-10-14 01:41), so fall back to the historically
+        # validated ROS2 helper graph left in a dormant (gate-closed) state.
+        # resource_sink records the transport actually in use so the sensor
+        # lifecycle opens the matching publish path on request.
+        writer_name = _attach_native_pointcloud_writer(
+            sensor, topic, frame_id, object_id_map=bool(object_id_map)
         )
+        if writer_name is not None:
+            if resource_sink is not None:
+                resource_sink["transport_used"] = "native"
+                resource_sink["writer_name"] = writer_name
+                resource_sink["object_id_map"] = bool(object_id_map)
+            print(
+                f"[openflex_isaac_sensors] MID360 native transport prepared at {render_product_path}, "
+                f"topic={topic} (writer attached)",
+                flush=True,
+            )
+            return lidar_path
+        _create_direct_helper_lidar_graph(
+            graph_path=graph_path,
+            render_product_path=render_product_path,
+            topic=topic,
+            frame_id=frame_id,
+            object_id_map=object_id_map,
+            frame_skip_count=_frame_skip_count(),
+        )
+        if resource_sink is not None:
+            resource_sink["transport_used"] = "helper"
         print(
-            f"[openflex_isaac_sensors] Created MID360 native PointCloud2 writer at {render_product_path}, "
-            f"topic={topic}",
+            f"[openflex_isaac_sensors] MID360 native transport fell back to the ROS2 helper "
+            f"graph at {graph_path}, topic={topic} (gate closed until the lidar is requested)",
+            flush=True,
+        )
+        return lidar_path
+
+    if transport == "direct_poll":
+        # Direct-poll transport (the 2026-10-14 direct probe port): the
+        # LidarSensor-owned GMO render product is the single consumer of the
+        # RTX stream — no registry writer, no ROS2 helper graph, no gate. The
+        # lifecycle polls get_data("generic-model-output") every Kit frame and
+        # publishes PointCloud2 through rclpy from inside this process.
+        render_product_path, sensor = _create_lidar_render_product(lidar, frame_id)
+        if resource_sink is not None:
+            resource_sink.update({
+                "lidar_sensor": sensor,
+                "render_product": _lidar_render_product(sensor),
+                "render_product_path": render_product_path,
+                "transport_used": "direct_poll",
+            })
+        if sensor is None:
+            raise RuntimeError("direct_poll MID360 transport requires the Isaac Sim LidarSensor API")
+        _print_robot_mid360_diagnostics(stage, parent_path, root_path, lidar_path)
+        print(
+            f"[openflex_isaac_sensors] Created MID360 at {lidar_path}, topic={topic}, "
+            f"transport=direct-poll (probe-style GMO polling, no graph), mount_mode={mount_mode}",
             flush=True,
         )
         return lidar_path
@@ -977,6 +1133,8 @@ def create_robot_mid360(
         object_id_map=object_id_map,
         frame_skip_count=_frame_skip_count(),
     )
+    if resource_sink is not None:
+        resource_sink["transport_used"] = "helper"
     _print_robot_mid360_diagnostics(stage, parent_path, root_path, lidar_path)
     print(
         f"[openflex_isaac_sensors] Created MID360 at {lidar_path}, graph={graph_path}, "

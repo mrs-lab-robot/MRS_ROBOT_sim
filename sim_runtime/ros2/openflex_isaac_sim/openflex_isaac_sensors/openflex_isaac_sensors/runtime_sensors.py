@@ -188,7 +188,7 @@ class RobotSensorRuntime:
         self._camera_config = load_realsense_config(Path(realsense_asset_dir).expanduser())
         self._lidar_config = load_mid360_config(Path(mid360_asset_dir).expanduser())
         sensor_config = self._lidar_config.get("sensor", {}) or {}
-        self._lidar_model_config = str(sensor_config.get("default_profile", "Example_Rotary"))
+        self._lidar_model_config = str(sensor_config.get("default_profile", "MID360_APPROX"))
         self._lidar_profile = str(
             lidar_profile
             or sensor_config.get("performance_profile")
