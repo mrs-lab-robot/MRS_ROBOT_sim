@@ -16,6 +16,14 @@ from mrs_robot_lab.recorders.episode_schema import CURRENT_EPISODE_FORMAT
 
 JOINT_STATE_DIMENSION = len(JOINT_STATE_NAMES)
 
+# Mimic annotation layout (mimic_annotation/ group, sibling of lio_pose):
+# - object_pose: (steps, num_objects, 7) world pose per tracked object
+# - eef_pose / target_eef_pose: (steps, 14) bimanual [left 7 | right 7]
+# - subtask_signal: (steps,) int32 current subtask id (-1 = unknown)
+# - subtask_term_flags: (steps, num_subtask_labels) uint8 completion flags
+MIMIC_ANNOTATION_EEF_WIDTH = 14
+MIMIC_ANNOTATION_POSE_WIDTH = 7
+
 
 class EpisodeState(str, Enum):
     IDLE = "idle"
@@ -31,6 +39,10 @@ class TeleopEpisodeRecorder:
         self._camera_frames: dict[str, list[tuple[int, int, bytes]]] = {}  # (sim_time_ns, step_index, frame)
         self._last_sim_time_ns: int | None = None
         self._last_step_index: int | None = None
+        self._mimic_object_names: tuple[str, ...] | None = None
+        self._mimic_subtask_labels: tuple[str, ...] | None = None
+        self._mimic_num_objects: int | None = None
+        self._mimic_num_labels: int | None = None
 
     @property
     def num_steps(self) -> int:
@@ -58,6 +70,7 @@ class TeleopEpisodeRecorder:
         camera_frames: dict[str, bytes] | None = None,
         lio_pose: list[float] | tuple[float, ...] | None = None,
         lio_velocity: list[float] | tuple[float, ...] | None = None,
+        mimic_annotation: dict[str, Any] | None = None,
     ) -> None:
         if self.state is not EpisodeState.RECORDING:
             return
@@ -122,6 +135,12 @@ class TeleopEpisodeRecorder:
                 if not all(math.isfinite(value) for value in converted):
                     raise ValueError(f"{name} values must be finite")
                 sample[name] = converted
+        if mimic_annotation is not None:
+            sample["mimic_annotation"] = self._validate_mimic_annotation(mimic_annotation)
+        elif self._mimic_num_objects is not None:
+            raise ValueError(
+                "mimic_annotation was enabled for this episode; every step must provide it"
+            )
         sample["raw_command"] = raw_command or {}
         encoded_frames: dict[str, bytes] = {}
         if camera_frames is not None:
@@ -141,6 +160,132 @@ class TeleopEpisodeRecorder:
         if camera_frames is not None:
             for camera_name, frame in encoded_frames.items():
                 self._camera_frames.setdefault(camera_name, []).append((int(sim_time_ns), int(actual_step_index), frame))
+
+    def _validate_mimic_annotation(self, annotation: dict[str, Any]) -> dict[str, Any]:
+        """Validate one per-step Mimic annotation sample against the episode layout."""
+
+        if not isinstance(annotation, dict):
+            raise TypeError("mimic_annotation must be a dictionary")
+        try:
+            object_pose = annotation["object_pose"]
+            eef_pose = annotation["eef_pose"]
+            target_eef_pose = annotation["target_eef_pose"]
+            subtask_signal = annotation["subtask_signal"]
+            subtask_flags = annotation["subtask_term_flags"]
+            object_names = annotation["object_names"]
+            subtask_labels = annotation["subtask_labels"]
+        except KeyError as error:
+            raise ValueError(f"mimic_annotation is missing field: {error.args[0]}") from error
+
+        if self._mimic_num_objects is None:
+            names = tuple(str(name) for name in object_names)
+            if not names:
+                raise ValueError("mimic_annotation requires at least one tracked object")
+            labels = tuple(str(label) for label in subtask_labels)
+            if not labels:
+                raise ValueError("mimic_annotation requires subtask labels")
+            self._mimic_object_names = names
+            self._mimic_subtask_labels = labels
+            self._mimic_num_objects = len(names)
+            self._mimic_num_labels = len(labels)
+        elif (
+            tuple(str(name) for name in object_names) != self._mimic_object_names
+            or tuple(str(label) for label in subtask_labels) != self._mimic_subtask_labels
+        ):
+            raise ValueError("mimic_annotation object/subtask names must stay constant within one episode")
+
+        num_objects = int(self._mimic_num_objects or 0)
+        num_labels = int(self._mimic_num_labels or 0)
+        if len(object_pose) != num_objects:
+            raise ValueError(
+                f"mimic object_pose must contain {num_objects} object poses per step"
+            )
+        pose_rows: list[list[float]] = []
+        for row in object_pose:
+            values = [float(value) for value in row]
+            if len(values) != MIMIC_ANNOTATION_POSE_WIDTH:
+                raise ValueError("each mimic object_pose row must contain 7 values (pos xyz + quat xyzw)")
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError("mimic object_pose values must be finite")
+            pose_rows.append(values)
+        eef_rows: list[float] = []
+        target_rows: list[float] = []
+        for name, values in (("eef_pose", eef_pose), ("target_eef_pose", target_eef_pose)):
+            converted = [float(value) for value in values]
+            if len(converted) != MIMIC_ANNOTATION_EEF_WIDTH:
+                raise ValueError(f"mimic {name} must contain 14 values (left 7 + right 7)")
+            if not all(math.isfinite(value) for value in converted):
+                raise ValueError(f"mimic {name} values must be finite")
+            if name == "eef_pose":
+                eef_rows = converted
+            else:
+                target_rows = converted
+        signal = int(subtask_signal)
+        flags = [int(value) for value in subtask_flags]
+        if len(flags) != num_labels:
+            raise ValueError(f"mimic subtask_term_flags must contain {num_labels} values per step")
+        if any(value not in (0, 1) for value in flags):
+            raise ValueError("mimic subtask_term_flags must be 0 or 1")
+        return {
+            "object_pose": pose_rows,
+            "eef_pose": eef_rows,
+            "target_eef_pose": target_rows,
+            "subtask_signal": signal,
+            "subtask_term_flags": flags,
+        }
+
+    def _write_mimic_annotation_group(self, dataset: Any, np: Any) -> None:
+        """Persist the mimic_annotation/ group (sibling of lio_pose/lio_velocity)."""
+
+        import h5py
+
+        num_objects = int(self._mimic_num_objects or 0)
+        num_labels = int(self._mimic_num_labels or 0)
+        group = dataset.create_group("mimic_annotation")
+        group.attrs["version"] = 1
+        group.create_dataset(
+            "object_names",
+            data=np.asarray(list(self._mimic_object_names or ()), dtype=h5py.string_dtype("utf-8")),
+        )
+        group.create_dataset(
+            "subtask_labels",
+            data=np.asarray(list(self._mimic_subtask_labels or ()), dtype=h5py.string_dtype("utf-8")),
+        )
+        object_pose = np.asarray(
+            [sample["mimic_annotation"]["object_pose"] for sample in self._samples],
+            dtype="float32",
+        )
+        group.create_dataset(
+            "object_pose",
+            data=object_pose.reshape((-1, num_objects, MIMIC_ANNOTATION_POSE_WIDTH)),
+            compression="gzip",
+        )
+        for field in ("eef_pose", "target_eef_pose"):
+            values = np.asarray(
+                [sample["mimic_annotation"][field] for sample in self._samples],
+                dtype="float32",
+            )
+            group.create_dataset(
+                field,
+                data=values.reshape((-1, MIMIC_ANNOTATION_EEF_WIDTH)),
+                compression="gzip",
+            )
+        group.create_dataset(
+            "subtask_signal",
+            data=np.asarray(
+                [sample["mimic_annotation"]["subtask_signal"] for sample in self._samples],
+                dtype="int32",
+            ),
+        )
+        subtask_flags = np.asarray(
+            [sample["mimic_annotation"]["subtask_term_flags"] for sample in self._samples],
+            dtype="uint8",
+        )
+        group.create_dataset(
+            "subtask_term_flags",
+            data=subtask_flags.reshape((-1, num_labels)),
+            compression="gzip",
+        )
 
     def save(self, output_path: str | Path, *, metadata: dict[str, Any]) -> Path:
         if self.state is not EpisodeState.RECORDING:
@@ -162,6 +307,16 @@ class TeleopEpisodeRecorder:
         if has_complete_provenance:
             # 只有完整溯源才添加schema版本，标记为可训练的新格式
             enriched_metadata["episode_schema_version"] = "1.0"
+        if self._mimic_object_names is not None:
+            enriched_metadata["mimic_annotation"] = {
+                "enabled": True,
+                "object_names": list(self._mimic_object_names),
+                "subtask_labels": list(self._mimic_subtask_labels or ()),
+                "pose_layout": "position_xyz + quaternion_xyzw (world frame)",
+                "eef_order": ["left", "right"],
+                "eef_width": MIMIC_ANNOTATION_EEF_WIDTH,
+                "version": 1,
+            }
         metadata_json = json.dumps(enriched_metadata, sort_keys=True)
 
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -196,6 +351,9 @@ class TeleopEpisodeRecorder:
                         values = np.asarray([sample[field] for sample in self._samples], dtype="float32")
                         dataset.create_dataset(field, data=values.reshape((-1, 3)), compression="gzip")
 
+                if "mimic_annotation" in self._samples[0]:
+                    self._write_mimic_annotation_group(dataset, np)
+
                 # 保留旧的action字段以兼容现有代码（使用applied_target）
                 action_values = np.asarray([sample["applied_target"] for sample in self._samples], dtype="float32")
                 dataset.create_dataset("action", data=action_values.reshape((-1, ACTION_DIMENSION)), compression="gzip")
@@ -229,4 +387,8 @@ class TeleopEpisodeRecorder:
         self._camera_frames.clear()
         self._last_sim_time_ns = None
         self._last_step_index = None
+        self._mimic_object_names = None
+        self._mimic_subtask_labels = None
+        self._mimic_num_objects = None
+        self._mimic_num_labels = None
         self.state = EpisodeState.IDLE

@@ -208,6 +208,12 @@ def main() -> None:
     parser.add_argument("--render-hz", type=int, default=30)
     parser.add_argument("--physics-hz", type=int, default=120)
     parser.add_argument(
+        "--record-mimic-annotation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Record the mimic_annotation/ group (object/eef/subtask) into saved episodes",
+    )
+    parser.add_argument(
         "--reset-randomization-json",
         default="{}",
         help="Enabled reset randomization ranges declared for the selected YAML profile",
@@ -316,6 +322,10 @@ def main() -> None:
             ArenaSensorManager,
         )
         from mrs_robot_lab.recorders.capture_api import CaptureControlServer
+        from mrs_robot_lab.recorders.mimic_annotation import (
+            MimicAnnotationCollector,
+            mimic_annotation_metadata,
+        )
         from mrs_robot_lab.recorders.teleop_episode import EpisodeState, TeleopEpisodeRecorder
         from mrs_teleoperation.safety import CommandWatchdog
         from mrs_teleoperation.udp_link import UdpTeleopLink
@@ -449,6 +459,7 @@ def main() -> None:
             "render_hz": int(args.render_hz),
             "embodiment": "openflex",
             "embodiment_contract_sha256": contract_sha256,
+            "record_mimic_annotation": bool(args.record_mimic_annotation),
         }
         session_metadata["session_config_sha256"] = hashlib.sha256(
             json.dumps(session_metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -485,6 +496,24 @@ def main() -> None:
         capture_api = CaptureControlServer(host=args.control_host, port=args.control_port)
         capture_api.start()
         capture_api.update_status(ready=True, message=current_status)
+        mimic_collector = None
+        if args.record_mimic_annotation:
+            try:
+                mimic_collector = MimicAnnotationCollector(
+                    robot,
+                    env,
+                    task_id=args.task_id,
+                )
+            except (ImportError, RuntimeError, ValueError) as error:
+                raise RuntimeError(
+                    f"Mimic 标注采集器初始化失败（--record-mimic-annotation 已开启）: {error}"
+                ) from error
+            print(
+                "ARENA_MIMIC_ANNOTATION_READY "
+                f"objects={','.join(mimic_collector.object_names) or '-'} "
+                f"subtasks={','.join(mimic_collector.subtask_labels) or '-'}",
+                flush=True,
+            )
 
         robot_view = getattr(robot, "root_view", None)
         robot_prim_paths = getattr(robot_view, "prim_paths", ())
@@ -626,6 +655,14 @@ def main() -> None:
                         },
                         "embodiment_contract_sha256": contract_sha256,
                         "synthetic_vr": bool(synthetic_source),
+                        "record_mimic_annotation": bool(
+                            mimic_collector is not None and saved_steps > 0
+                        ),
+                        "mimic_annotation": (
+                            mimic_annotation_metadata(mimic_collector)
+                            if mimic_collector is not None
+                            else {"enabled": False}
+                        ),
                         "task_id": args.task_id,
                         "scene_id": args.scene_id,
                         "task_yaml": args.task_yaml,
@@ -728,7 +765,9 @@ def main() -> None:
             action_tensor.zero_()
             row = action_tensor[0] if action_tensor.ndim == 2 else action_tensor
             row.copy_(torch.tensor(actions, device=action_tensor.device, dtype=action_tensor.dtype))
-            observations, _, _, _, _ = env.step(action_tensor)
+            observations, _step_reward, _step_terminated, _step_truncated, step_extras = env.step(action_tensor)
+            if not isinstance(step_extras, dict):
+                step_extras = {}
             sim_step += 1
             recorded_camera_frames = None
             capture_camera, record_camera, stream_camera = _camera_step_roles(
@@ -769,6 +808,13 @@ def main() -> None:
                 "joint_velocity": next_joint_velocity,
             })
             if recorder.state is EpisodeState.RECORDING:
+                mimic_sample = None
+                if mimic_collector is not None:
+                    mimic_sample = mimic_collector.collect(
+                        actions=actions,
+                        current_by_name=current_by_name,
+                        extras=step_extras or None,
+                    )
                 recorder.append(
                     sim_time_ns=int((sim_step - 1) * env.unwrapped.step_dt * 1e9),
                     action=actions,
@@ -780,6 +826,7 @@ def main() -> None:
                     camera_frames=recorded_camera_frames,
                     lio_pose=lio_pose_before,
                     lio_velocity=lio_velocity_before,
+                    mimic_annotation=mimic_sample,
                 )
                 if sim_step % 15 == 0:
                     update_capture_status()
