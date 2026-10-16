@@ -25,16 +25,16 @@
         }
     }
     defaultPrim = "openarmx_integrated"
-    doc = """Generated from Composed Stage of root layer /tmp/tmpuema8vfs/openarmx_integrated.usdc
+# Generated from a composed stage; local source path omitted.
 
 
-Generated from Composed Stage of root layer /tmp/urdf_import_openflex_integrated_robot_76mohgm_/usdex_openflex_integrated_robot/openarmx_integrated.usdc
+# Generated from a composed stage; local source path omitted.
 
 
-Generated from Composed Stage of root layer /home/1024201092WYH/Robot/OpenFlex_ws/src/openflex_isaacsim/assets/usd/robots/openflex_integrated_robot/openflex_integrated_robot.usda
+# Generated from a composed stage; local source path omitted.
 
 
-Generated from Composed Stage of root layer /tmp/openflex_robot_original.usda
+# Generated from a composed stage; local source path omitted.
 """
     kilogramsPerUnit = 1
     metersPerUnit = 1

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mrs-robot-arena"
 version = "0.1.0"
-description = "OpenFleX robot embodiments, tasks, and evaluation suites for Isaac Lab-Arena"
+description = "Simulation embodiments, tasks, and evaluation utilities for Isaac Lab-Arena"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = ["PyYAML>=6.0"]

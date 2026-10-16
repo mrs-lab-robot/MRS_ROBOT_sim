@@ -59,7 +59,7 @@ class CameraStreamTest(unittest.TestCase):
 
     def test_preview_registration_records_peer_and_expires_to_fallback(self):
         registry = PreviewPeerRegistry(lease_s=3.0)
-        peer = ("10.20.30.40", 51842)
+        peer = ("198.51.100.40", 51842)
         fallback = ("192.0.2.10", 24104)
 
         self.assertTrue(registry.register(b"MRSR1", peer, now=10.0))
@@ -70,20 +70,20 @@ class CameraStreamTest(unittest.TestCase):
 
     def test_non_registration_datagrams_are_ignored_without_lease_refresh(self):
         registry = PreviewPeerRegistry(lease_s=3.0)
-        peer = ("10.20.30.40", 51842)
+        peer = ("198.51.100.40", 51842)
         fallback = ("192.0.2.10", 24104)
         self.assertTrue(registry.register(b"MRSR1", peer, now=10.0))
 
         for packet in (b"MRSR", b"MRSR0", b"MRSR1extra", b"", bytearray(b"MRSR1")):
-            self.assertFalse(registry.register(packet, ("10.0.0.2", 12), now=12.5))
+            self.assertFalse(registry.register(packet, ("198.51.100.2", 12), now=12.5))
 
         self.assertEqual(registry.target(fallback, now=12.999), peer)
         self.assertEqual(registry.target(fallback, now=13.0), fallback)
 
     def test_switching_active_preview_peer_reports_one_new_activation(self):
         registry = PreviewPeerRegistry(lease_s=3.0)
-        first_peer = ("10.20.30.40", 51842)
-        second_peer = ("10.20.30.41", 51843)
+        first_peer = ("198.51.100.40", 51842)
+        second_peer = ("198.51.100.41", 51843)
 
         self.assertTrue(registry.register(b"MRSR1", first_peer, now=10.0))
         self.assertFalse(registry.register(b"MRSR1", first_peer, now=11.0))

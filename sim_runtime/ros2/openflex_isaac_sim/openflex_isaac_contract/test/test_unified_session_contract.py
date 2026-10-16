@@ -40,13 +40,13 @@ class UnifiedSessionContractTest(unittest.TestCase):
                 SensorConfig("imu", "imu", frequency_hz=30),
             ),
             machine_id="local",
-            simulation_repo_root="/workspace/MRS_ROBOT_sim",
-            isaac_lab_python="/workspace/MRS_ROBOT_sim/.venv/bin/python",
+            simulation_repo_root="/workspace/simulation-stack",
+            isaac_lab_python="/workspace/simulation-stack/.venv/bin/python",
             lerobot_python="/opt/lerobot/bin/python",
             episode_root="/data/episodes",
             dataset_root="/data/lerobot",
             dataset_id="openflex_sim/navigation_to_goal",
-            sim_client_address="10.0.0.8",
+            sim_client_address="192.0.2.8",
             teleop_mode="vr",
             enable_rviz=True,
             random_seed=7,
@@ -62,7 +62,7 @@ class UnifiedSessionContractTest(unittest.TestCase):
         self.assertEqual(len(restored.sensors), 2)
         self.assertTrue(restored.enable_rviz)
         self.assertEqual(restored.dataset_id, "openflex_sim/navigation_to_goal")
-        self.assertEqual(restored.sim_client_address, "10.0.0.8")
+        self.assertEqual(restored.sim_client_address, "192.0.2.8")
 
     def test_config_hash_is_independent_of_metadata_mapping_order(self):
         first = self.config.to_dict()

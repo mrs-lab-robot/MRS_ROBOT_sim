@@ -1,29 +1,21 @@
-# MRS Robot simulation runtime
+# Simulation Runtime
 
-`sim_runtime` is the simulator-facing foundation: canonical USD/stages, sensor and runtime configuration, scenarios,
-ROS 2 packages, and ROS-independent teleoperation protocol/transport. It does not import Isaac Lab-Arena or define
-benchmark tasks.
+This layer contains simulation assets and configuration, ROS 2 packages, and transport utilities shared by the Isaac Sim-facing components. It does not contain the desktop GUI or real-robot application, and its interfaces are still under development.
 
-## Canonical resources
+## Build boundary
 
-- Robot USD: `assets/robots/openflex_robot.usda`
-- Sensor and mount configuration: `config/sensors/`
-- ROS 2 workspace packages: `ros2/openflex_isaac_sim/`
-- VR command protocol and UDP/safety primitives: `teleoperation/src/mrs_teleoperation/`
-- Arena ROS relay package (transport adapter only): `ros2/mrs_robot_arena_bridge/`
-
-RealSense configs in the ROS package are symlinks to `config/sensors/realsense/`, so ROS packaging uses the same
-canonical data as Isaac Lab. `../isaac_sim_core` and `../ros2_pkgs/openflex_isaac_sim` are compatibility symlinks for
-existing launchers and GUIs; new code should use these canonical paths.
-
-## Build and test
-
-Build the six Isaac Sim ROS packages from the repository root after sourcing ROS Humble and the OpenFleX underlay:
+Build the ROS 2 packages after sourcing ROS 2 Humble and the compatible companion GUI/robot workspace underlay:
 
 ```bash
-colcon build --symlink-install --base-paths sim_runtime/ros2/openflex_isaac_sim
+source /opt/ros/humble/setup.bash
+source /path/to/companion-gui-workspace/install/setup.bash
+export ISAACSIM_ROBOT_ROOT="$(pwd)"
+colcon build --symlink-install --base-paths sim_runtime/ros2/*_isaac_sim
+source install/setup.bash
 ```
 
-The optional VR relay is built separately from `arena_benchmark/integrations/ros2/mrs_robot_arena_bridge` so its
-generated colcon outputs do not mix with the main runtime workspace. The simulator-independent protocol and safety
-tests live at `../tests/sim_runtime/teleoperation`; they use the project teleoperation source package directly.
+The companion workspace and its dependencies are separate repositories. If a dependency is not available in the underlay, resolve and build it according to its own versioned instructions before building this overlay.
+
+The ROS and Isaac Sim processes use different Python environments (targeting Python 3.10 and 3.12 respectively). Do not source ROS Python paths into the simulator process. Generated `build/`, `install/`, and `log/` outputs are local build artifacts, not source files.
+
+For complete desktop and real-robot workflows, deploy a compatible revision of the companion GUI repository separately. This runtime documentation does not claim end-to-end acceptance.

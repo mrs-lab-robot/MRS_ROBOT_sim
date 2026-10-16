@@ -9,7 +9,7 @@ test_results_*/
 .deps/
 /isaac_ros2_utils/
 
-# Python caches and test outputs
+# Python caches, test outputs, and local environments
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -17,39 +17,34 @@ __pycache__/
 .ruff_cache/
 .coverage
 coverage.xml
+*.egg-info/
+.venv/
+.cache/
 
-# Isaac Sim and generated assets
+# Generated simulation assets and local backups
 sim_runtime/assets/generated/
 isaac_sim_core/assets/generated/
 *.usd.bak
 *.usda.bak
 
-# Python package/runtime artifacts
-*.egg-info/
-.venv/
-.cache/
+# Local-only reports, agent notes, and GUI task artifacts
+/reports/
+/.hermes/
+/task_page*.png
+/*.patch
+/项目架构.md
 
-# Local reports and runtime logs
-reports/raw/
-reports/**/raw/
-reports/runtime/generated/
-/reports/runtime/visual/
-*.log
-
-# Generated runtime descriptions and local measurement exports
+# Generated data and logs
 *.bag
 *.db3
 *.mcap
 *.rosbag
 *.csv
 *.jsonl
+*.log
 
 # Editors and operating-system metadata
 .idea/
 .vscode/
 .DS_Store
 *.swp
-
-# Removed pre-standalone package trees may still contain local backup files.
-/ros2_pkgs/control/
-/ros2_pkgs/simulation_bridge/
