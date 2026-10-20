@@ -25,17 +25,7 @@
         }
     }
     defaultPrim = "openarmx_integrated"
-# Generated from a composed stage; local source path omitted.
-
-
-# Generated from a composed stage; local source path omitted.
-
-
-# Generated from a composed stage; local source path omitted.
-
-
-# Generated from a composed stage; local source path omitted.
-"""
+    doc = "Generated from a composed stage; local source paths omitted."
     kilogramsPerUnit = 1
     metersPerUnit = 1
     upAxis = "Z"
