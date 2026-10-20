@@ -17,12 +17,12 @@ from mrs_robot_lab.recorders.episode_schema import CURRENT_EPISODE_FORMAT
 JOINT_STATE_DIMENSION = len(JOINT_STATE_NAMES)
 
 # Mimic annotation layout (mimic_annotation/ group, sibling of lio_pose):
-# - object_pose: (steps, num_objects, 7) world pose per tracked object
-# - eef_pose / target_eef_pose: (steps, 14) bimanual [left 7 | right 7]
+# - object_pose: (steps, num_objects, 4, 4) Mimic homogeneous pose matrices
+# - eef_pose / target_eef_pose: (steps, 2, 4, 4) [left, right] Mimic pose matrices
 # - subtask_signal: (steps,) int32 current subtask id (-1 = unknown)
 # - subtask_term_flags: (steps, num_subtask_labels) uint8 completion flags
-MIMIC_ANNOTATION_EEF_WIDTH = 14
-MIMIC_ANNOTATION_POSE_WIDTH = 7
+MIMIC_ANNOTATION_EEF_COUNT = 2
+MIMIC_ANNOTATION_POSE_SHAPE = (4, 4)
 
 
 class EpisodeState(str, Enum):
@@ -200,22 +200,27 @@ class TeleopEpisodeRecorder:
             raise ValueError(
                 f"mimic object_pose must contain {num_objects} object poses per step"
             )
-        pose_rows: list[list[float]] = []
-        for row in object_pose:
-            values = [float(value) for value in row]
-            if len(values) != MIMIC_ANNOTATION_POSE_WIDTH:
-                raise ValueError("each mimic object_pose row must contain 7 values (pos xyz + quat xyzw)")
-            if not all(math.isfinite(value) for value in values):
+        pose_rows: list[list[list[float]]] = []
+        for matrix in object_pose:
+            rows = [[float(value) for value in row] for row in matrix]
+            if len(rows) != 4 or any(len(row) != 4 for row in rows):
+                raise ValueError("each mimic object_pose entry must be a 4x4 homogeneous transform")
+            if not all(math.isfinite(value) for row in rows for value in row):
                 raise ValueError("mimic object_pose values must be finite")
-            pose_rows.append(values)
-        eef_rows: list[float] = []
-        target_rows: list[float] = []
-        for name, values in (("eef_pose", eef_pose), ("target_eef_pose", target_eef_pose)):
-            converted = [float(value) for value in values]
-            if len(converted) != MIMIC_ANNOTATION_EEF_WIDTH:
-                raise ValueError(f"mimic {name} must contain 14 values (left 7 + right 7)")
-            if not all(math.isfinite(value) for value in converted):
-                raise ValueError(f"mimic {name} values must be finite")
+            pose_rows.append(rows)
+        eef_rows: list[list[list[float]]] = []
+        target_rows: list[list[list[float]]] = []
+        for name, poses in (("eef_pose", eef_pose), ("target_eef_pose", target_eef_pose)):
+            if len(poses) != MIMIC_ANNOTATION_EEF_COUNT:
+                raise ValueError(f"mimic {name} must contain [left, right] pose matrices")
+            converted = []
+            for matrix in poses:
+                rows = [[float(value) for value in row] for row in matrix]
+                if len(rows) != 4 or any(len(row) != 4 for row in rows):
+                    raise ValueError(f"each mimic {name} entry must be a 4x4 homogeneous transform")
+                if not all(math.isfinite(value) for row in rows for value in row):
+                    raise ValueError(f"mimic {name} values must be finite")
+                converted.append(rows)
             if name == "eef_pose":
                 eef_rows = converted
             else:
@@ -257,7 +262,7 @@ class TeleopEpisodeRecorder:
         )
         group.create_dataset(
             "object_pose",
-            data=object_pose.reshape((-1, num_objects, MIMIC_ANNOTATION_POSE_WIDTH)),
+            data=object_pose.reshape((-1, num_objects, *MIMIC_ANNOTATION_POSE_SHAPE)),
             compression="gzip",
         )
         for field in ("eef_pose", "target_eef_pose"):
@@ -267,7 +272,7 @@ class TeleopEpisodeRecorder:
             )
             group.create_dataset(
                 field,
-                data=values.reshape((-1, MIMIC_ANNOTATION_EEF_WIDTH)),
+                data=values.reshape((-1, MIMIC_ANNOTATION_EEF_COUNT, *MIMIC_ANNOTATION_POSE_SHAPE)),
                 compression="gzip",
             )
         group.create_dataset(
@@ -312,9 +317,8 @@ class TeleopEpisodeRecorder:
                 "enabled": True,
                 "object_names": list(self._mimic_object_names),
                 "subtask_labels": list(self._mimic_subtask_labels or ()),
-                "pose_layout": "position_xyz + quaternion_xyzw (world frame)",
+                "pose_layout": "4x4 homogeneous transform matrix (world frame)",
                 "eef_order": ["left", "right"],
-                "eef_width": MIMIC_ANNOTATION_EEF_WIDTH,
                 "version": 1,
             }
         metadata_json = json.dumps(enriched_metadata, sort_keys=True)

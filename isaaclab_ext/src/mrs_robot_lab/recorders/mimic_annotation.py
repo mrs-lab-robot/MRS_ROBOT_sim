@@ -58,16 +58,23 @@ _TASK_OBJECT_HINTS: dict[str, tuple[str | None, tuple[str, ...]]] = {
     ),
 }
 
-_POSE_WIDTH = 7  # position xyz + quaternion xyzw (world frame)
+def _tensor_view(value: Any) -> Any:
+    """Unwrap Isaac Lab's ProxyArray while accepting plain torch tensors."""
+
+    return getattr(value, "torch", value)
 
 
-def _finite_pose(position: Any, orientation: Any) -> list[float]:
+def _finite_pose(position: Any, orientation: Any) -> list[list[float]]:
+    """Return the Mimic API's 4x4 pose matrix (position plus quaternion xyzw)."""
+
     import torch
+    import isaaclab.utils.math as pose_utils
 
-    pos = position.detach().to(device="cpu", dtype=torch.float32).reshape(3)
-    quat = orientation.detach().to(device="cpu", dtype=torch.float32).reshape(4)
-    values = [float(value) for value in (*pos, *quat)]
-    if not all(math.isfinite(value) for value in values):
+    pos = _tensor_view(position).detach().to(device="cpu", dtype=torch.float32).reshape(1, 3)
+    quat = _tensor_view(orientation).detach().to(device="cpu", dtype=torch.float32).reshape(1, 4)
+    matrix = pose_utils.make_pose(pos, pose_utils.matrix_from_quat(quat)).reshape(4, 4)
+    values = matrix.tolist()
+    if not all(math.isfinite(float(value)) for row in values for value in row):
         raise ValueError("mimic annotation pose contains non-finite values")
     return values
 
@@ -80,8 +87,8 @@ def _resolve_eef_body_indices(robot: Any) -> dict[str, int]:
     find_bodies = getattr(robot, "find_bodies", None)
     if callable(find_bodies):
         try:
-            names, indices = find_bodies([".*_link7$"])
-            index_by_name = {str(name): int(index) for name, index in zip(names, indices)}
+            indices, names = find_bodies([".*_link7$"])
+            index_by_name = {str(name): int(index) for index, name in zip(indices, names)}
         except (RuntimeError, ValueError):
             index_by_name = {}
     for side, body_name in EEF_BODY_NAMES.items():
@@ -137,7 +144,16 @@ class MimicAnnotationCollector:
         self._subtask_labels: tuple[str, ...] = (
             tuple(subtask_labels) if subtask_labels is not None else hint_labels
         )
+        self._pick_cube_initial_z: float | None = None
         self.object_names: tuple[str, ...] = self._resolve_object_names()
+
+    def begin_episode(self) -> None:
+        """Capture task-relative thresholds after the environment has been reset."""
+
+        if self._task_id == "openflex_pick_cube":
+            scene = self._env.unwrapped.scene
+            root_pos_w = _tensor_view(scene["pick_cube"].data.root_pos_w)
+            self._pick_cube_initial_z = float(root_pos_w[0, 2])
 
     def _resolve_object_names(self) -> tuple[str, ...]:
         scene = self._env.unwrapped.scene
@@ -177,46 +193,59 @@ class MimicAnnotationCollector:
         sample["subtask_term_flags"] = subtask_flags
         return sample
 
-    def _collect_object_poses(self) -> list[list[float]]:
-        import torch
-
+    def _collect_object_poses(self) -> list[list[list[float]]]:
         scene = self._env.unwrapped.scene
-        origin = scene.env_origins[0].detach().to(device="cpu", dtype=torch.float32)
-        poses: list[list[float]] = []
+        mimic_getter = getattr(self._env.unwrapped, "get_object_poses", None)
+        if callable(mimic_getter):
+            try:
+                api_poses: Any = mimic_getter(env_ids=[0])
+            except (NotImplementedError, TypeError):
+                api_poses = None
+            if api_poses is not None and all(name in api_poses for name in self.object_names):
+                return [self._finite_matrix(api_poses[name]) for name in self.object_names]
+        poses: list[list[list[float]]] = []
         for name in self.object_names:
             asset = scene[name]
-            position = asset.data.root_pos_w[0].detach().to(
-                device="cpu", dtype=torch.float32
-            ) - origin
-            quat = asset.data.root_quat_w[0].detach().to(device="cpu", dtype=torch.float32)
-            poses.append(_finite_pose(position, quat))
+            poses.append(_finite_pose(asset.data.root_pos_w[0], asset.data.root_quat_w[0]))
         return poses
+
+    @staticmethod
+    def _finite_matrix(value: Any) -> list[list[float]]:
+        import torch
+
+        matrix = _tensor_view(value).detach().to(device="cpu", dtype=torch.float32)
+        if matrix.ndim == 3:
+            matrix = matrix[0]
+        if tuple(matrix.shape) != (4, 4):
+            raise ValueError("Mimic API pose must have shape (4, 4) or (1, 4, 4)")
+        rows = matrix.tolist()
+        if not all(math.isfinite(float(item)) for row in rows for item in row):
+            raise ValueError("Mimic API pose contains non-finite values")
+        return rows
 
     def _collect_eef_poses(
         self,
         actions: list[float] | tuple[float, ...],
         current_by_name: dict[str, float],
-    ) -> tuple[list[float], list[float]]:
+    ) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
         import torch
         import isaaclab.utils.math as pose_utils
 
         data = self._robot.data
-        body_state = data.body_state_w
-        origin = self._env.unwrapped.scene.env_origins[0].detach().to(
-            device="cpu", dtype=torch.float32
-        )
-        eef_poses: list[float] = []
-        target_poses: list[float] = []
+        body_state = _tensor_view(data.body_state_w)
+        eef_poses: list[list[list[float]]] = []
+        target_poses: list[list[list[float]]] = []
         arm_delta_by_side = _arm_delta_targets(actions, current_by_name)
         joint_names = [str(name) for name in self._robot.joint_names]
         joint_index_by_name = {name: index for index, name in enumerate(joint_names)}
-        jacobian = getattr(data, "jacobian", None)
+        raw_jacobian = getattr(data, "body_link_jacobian_w", None)
+        jacobian = _tensor_view(raw_jacobian) if raw_jacobian is not None else None
         for side in ("left", "right"):
             body_index = self._eef_indices[side]
             state = body_state[0, body_index].detach().to(device="cpu", dtype=torch.float32)
-            position = state[0:3] - origin
+            position = state[0:3]
             quat = state[3:7]
-            eef_poses.extend(_finite_pose(position, quat))
+            eef_poses.append(_finite_pose(position, quat))
 
             # action_to_target_eef_pose() semantics for joint-space actions:
             # propagate the commanded joint delta through the arm Jacobian.
@@ -228,9 +257,11 @@ class MimicAnnotationCollector:
                     joint_index_by_name[joint_name]
                     for joint_name in ACTION_JOINTS_BY_TERM[f"{side}_arm_action"]
                 ]
-                body_jacobian = jacobian[0, body_index, :, :][:, columns].detach().to(
-                    device="cpu", dtype=torch.float32
-                )
+                # Isaac Lab omits the fixed root body from body_link_jacobian_w.
+                jacobian_body_index = body_index - 1
+                body_jacobian = jacobian[
+                    0, jacobian_body_index, :, :
+                ][:, columns].detach().to(device="cpu", dtype=torch.float32)
                 twist = body_jacobian @ delta
                 linear = twist[0:3]
                 angular = twist[3:6]
@@ -244,8 +275,8 @@ class MimicAnnotationCollector:
                     target_quat = pose_utils.quat_mul(
                         rotation_delta.unsqueeze(0), quat.unsqueeze(0)
                     ).reshape(4)
-            target_poses.extend(_finite_pose(target_position, target_quat))
-        if len(eef_poses) != 2 * _POSE_WIDTH or len(target_poses) != 2 * _POSE_WIDTH:
+            target_poses.append(_finite_pose(target_position, target_quat))
+        if len(eef_poses) != 2 or len(target_poses) != 2:
             raise ValueError("bimanual eef annotation must contain both arms")
         return eef_poses, target_poses
 
@@ -261,6 +292,16 @@ class MimicAnnotationCollector:
                     phase = int(raw_phase)
                 except (TypeError, ValueError):
                     phase = None
+        if phase is None and self._task_id == "openflex_pick_cube":
+            if self._pick_cube_initial_z is None:
+                self.begin_episode()
+            if self._pick_cube_initial_z is not None:
+                root_pos_w = _tensor_view(
+                    self._env.unwrapped.scene["pick_cube"].data.root_pos_w
+                )
+                lift_height = float(root_pos_w[0, 2]) - self._pick_cube_initial_z
+                # Existing task target is +0.25 m with 0.04 m tolerance.
+                phase = 1 if lift_height >= 0.21 else 0
         if phase is None or phase < 0:
             return -1, flags
         # Phase p means subtask p is active: subtasks 0..p-1 completed.
@@ -278,7 +319,7 @@ def mimic_annotation_metadata(collector: "MimicAnnotationCollector") -> dict[str
         "object_names": list(collector.object_names),
         "subtask_labels": list(collector.subtask_labels),
         "eef_body_names": dict(EEF_BODY_NAMES),
-        "pose_layout": "position_xyz + quaternion_xyzw (world frame)",
+        "pose_layout": "4x4 homogeneous transform matrix (world frame)",
         "eef_order": ["left", "right"],
         "version": 1,
     }

@@ -627,6 +627,8 @@ def main() -> None:
                 # 每次开始采集新一集：先复位机器人/环境，再进入录制
                 reset_environment()
             try:
+                if mimic_collector is not None:
+                    mimic_collector.begin_episode()
                 recorder.start()
                 current_status = "正在采集：操作完成后保存 Episode，或丢弃本次采集"
             except RuntimeError as error:
@@ -834,6 +836,16 @@ def main() -> None:
             rate_limiter.sleep()
     finally:
         pending_exception = sys.exc_info()[1]
+        if pending_exception is not None:
+            import traceback
+
+            traceback.print_exception(
+                type(pending_exception),
+                pending_exception,
+                pending_exception.__traceback__,
+                file=sys.__stderr__,
+            )
+            sys.stderr.flush()
         if not args.headless:
             from mrs_teleoperation.lifecycle import format_runtime_exit
 
@@ -855,15 +867,6 @@ def main() -> None:
                 ),
                 flush=True,
             )
-            if pending_exception is not None:
-                import traceback
-
-                traceback.print_exception(
-                    type(pending_exception),
-                    pending_exception,
-                    pending_exception.__traceback__,
-                    file=sys.__stderr__,
-                )
         if recorder is not None and recorder.state is EpisodeState.RECORDING:
             recorder.discard()
         if sensor_api is not None:

@@ -9,10 +9,18 @@ import unittest
 from pathlib import Path
 
 from mrs_robot_lab.recorders.teleop_episode import (
-    MIMIC_ANNOTATION_EEF_WIDTH,
     EpisodeState,
     TeleopEpisodeRecorder,
 )
+
+
+def _pose_matrix(x: float, y: float, z: float) -> list[list[float]]:
+    return [
+        [1.0, 0.0, 0.0, x],
+        [0.0, 1.0, 0.0, y],
+        [0.0, 0.0, 1.0, z],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
 
 
 def _annotation_step(*, step: int = 0, phase: int = 0, object_names=("transport_box_rigid_body",), labels=("approach_and_grasp", "lift", "carry_and_place")):
@@ -20,9 +28,9 @@ def _annotation_step(*, step: int = 0, phase: int = 0, object_names=("transport_
     return {
         "object_names": object_names,
         "subtask_labels": labels,
-        "object_pose": [[0.5 + drift, 0.1, 0.3, 0.0, 0.0, 0.0, 1.0] for _ in object_names],
-        "eef_pose": [0.2, -0.3, 0.9, 0.0, 0.0, 0.0, 1.0] + [0.2, 0.3, 0.9, 0.0, 0.0, 0.0, 1.0],
-        "target_eef_pose": [0.21, -0.31, 0.91, 0.0, 0.0, 0.0, 1.0] + [0.21, 0.31, 0.91, 0.0, 0.0, 0.0, 1.0],
+        "object_pose": [_pose_matrix(0.5 + drift, 0.1, 0.3) for _ in object_names],
+        "eef_pose": [_pose_matrix(0.2, -0.3, 0.9), _pose_matrix(0.2, 0.3, 0.9)],
+        "target_eef_pose": [_pose_matrix(0.21, -0.31, 0.91), _pose_matrix(0.21, 0.31, 0.91)],
         "subtask_signal": phase,
         "subtask_term_flags": [1 if phase >= index + 1 else 0 for index in range(len(labels))],
     }
@@ -65,9 +73,9 @@ class MimicAnnotationRecordingTest(unittest.TestCase):
                 labels = [label.decode() if isinstance(label, bytes) else str(label) for label in group["subtask_labels"][:]]
                 self.assertEqual(names, ["transport_box_rigid_body"])
                 self.assertEqual(labels, ["approach_and_grasp", "lift", "carry_and_place"])
-                self.assertEqual(group["object_pose"].shape, (5, 1, 7))
-                self.assertEqual(group["eef_pose"].shape, (5, MIMIC_ANNOTATION_EEF_WIDTH))
-                self.assertEqual(group["target_eef_pose"].shape, (5, MIMIC_ANNOTATION_EEF_WIDTH))
+                self.assertEqual(group["object_pose"].shape, (5, 1, 4, 4))
+                self.assertEqual(group["eef_pose"].shape, (5, 2, 4, 4))
+                self.assertEqual(group["target_eef_pose"].shape, (5, 2, 4, 4))
                 self.assertEqual(group["subtask_signal"].shape, (5,))
                 self.assertEqual(group["subtask_term_flags"].shape, (5, 3))
                 # object_pose 数值随采样变化（仿真里物体位姿要动）
@@ -181,7 +189,12 @@ class MimicAnnotationRecordingTest(unittest.TestCase):
         recorder = TeleopEpisodeRecorder()
         recorder.start()
         bad = _annotation_step()
-        bad["object_pose"] = [[float("nan"), 0.1, 0.3, 0.0, 0.0, 0.0, 1.0]]
+        bad["object_pose"] = [[
+            [1.0, 0.0, 0.0, float("nan")],
+            [0.0, 1.0, 0.0, 0.1],
+            [0.0, 0.0, 1.0, 0.3],
+            [0.0, 0.0, 0.0, 1.0],
+        ]]
         with self.assertRaises(ValueError):
             recorder.append(
                 sim_time_ns=1_000_000,
@@ -192,6 +205,45 @@ class MimicAnnotationRecordingTest(unittest.TestCase):
                 command_seq=0,
                 mimic_annotation=bad,
             )
+
+
+class MimicAnnotationSignalTest(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "torch is required")
+    def test_pick_cube_subtask_signal_switches_at_task_lift_threshold(self) -> None:
+        import torch
+
+        from mrs_robot_lab.recorders.mimic_annotation import MimicAnnotationCollector
+
+        class AssetData:
+            root_pos_w = torch.tensor([[0.40, 0.0, 0.69]], dtype=torch.float32)
+
+        class Asset:
+            data = AssetData()
+
+        class Scene:
+            rigid_objects = {"pick_cube": Asset()}
+
+            def __getitem__(self, name):
+                return self.rigid_objects[name]
+
+        class Env:
+            unwrapped = type("Unwrapped", (), {"scene": Scene()})()
+
+        class Robot:
+            @staticmethod
+            def find_bodies(_patterns):
+                return [1, 2], ["openarmx_left_link7", "openarmx_right_link7"]
+
+        scene = Env.unwrapped.scene
+        collector = MimicAnnotationCollector(
+            Robot(), Env(), task_id="openflex_pick_cube"
+        )
+        collector.begin_episode()
+        self.assertEqual(collector._collect_subtask_signal({}), (0, [0, 0]))
+        scene["pick_cube"].data.root_pos_w[0, 2] += 0.20
+        self.assertEqual(collector._collect_subtask_signal({}), (0, [0, 0]))
+        scene["pick_cube"].data.root_pos_w[0, 2] += 0.02
+        self.assertEqual(collector._collect_subtask_signal({}), (1, [1, 0]))
 
 
 class MimicAnnotationConversionTransparencyTest(unittest.TestCase):
@@ -239,9 +291,10 @@ class MimicAnnotationConversionTransparencyTest(unittest.TestCase):
                 group.attrs["version"] = 1
                 group.create_dataset("object_names", data=np.asarray(["transport_box_rigid_body"], dtype=h5py.string_dtype("utf-8")))
                 group.create_dataset("subtask_labels", data=np.asarray(["a", "b"], dtype=h5py.string_dtype("utf-8")))
-                group.create_dataset("object_pose", data=np.zeros((steps, 1, 7), dtype="float32"))
-                group.create_dataset("eef_pose", data=np.zeros((steps, 14), dtype="float32"))
-                group.create_dataset("target_eef_pose", data=np.zeros((steps, 14), dtype="float32"))
+                identity = np.eye(4, dtype="float32")
+                group.create_dataset("object_pose", data=np.tile(identity, (steps, 1, 1, 1)))
+                group.create_dataset("eef_pose", data=np.tile(identity, (steps, 2, 1, 1)))
+                group.create_dataset("target_eef_pose", data=np.tile(identity, (steps, 2, 1, 1)))
                 group.create_dataset("subtask_signal", data=np.zeros(steps, dtype="int32"))
                 group.create_dataset("subtask_term_flags", data=np.zeros((steps, 2), dtype="uint8"))
         return path
