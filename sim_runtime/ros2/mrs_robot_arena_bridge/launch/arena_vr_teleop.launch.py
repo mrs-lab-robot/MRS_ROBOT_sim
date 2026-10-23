@@ -64,6 +64,10 @@ def generate_launch_description():
             "enable_button_lift": "true",
             "enable_head_teleop": "true",
             "enable_waist_control": "false",
+            # 底盘速度：真机默认 0.3/0.3，仿真里按手感提到 2.5 倍
+            "max_linear_speed": "0.75",
+            "boost_linear_speed": "0.75",
+            "max_angular_speed": "0.75",
         }.items(),
     )
     relay = Node(

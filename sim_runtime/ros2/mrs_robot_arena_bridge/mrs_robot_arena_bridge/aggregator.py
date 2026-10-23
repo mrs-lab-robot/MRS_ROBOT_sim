@@ -196,7 +196,14 @@ class CommandAggregator:
         observed = self._values((position,), 1, "lift_state")[0]
         self._latest_lift_position = observed
         if not self._lift_action_velocity_active:
-            self._lift_action_target = self._bound_lift_position(observed)
+            # 无 jog 指令时「保持上次目标」，而不是跟随实测 —— 跟随会把重力下沉
+            # 一步步记成新目标（立柱自己往下掉）。只有首次或大幅跳变（仿真复位）
+            # 才重新锚定到实测位置。
+            if (
+                self._lift_action_target is None
+                or abs(self._lift_action_target - observed) > 0.15
+            ):
+                self._lift_action_target = self._bound_lift_position(observed)
             self._lift_action_last_update_time = timestamp
         return self._lift_action_target if self._lift_action_target is not None else observed
 
