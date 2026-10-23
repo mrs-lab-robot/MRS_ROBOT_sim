@@ -86,12 +86,17 @@ def action_from_command(
             current = float(current_joint_positions[LIFT_JOINTS[0]])
             target = _finite_clamp(command.lift_position[0], *JOINT_POSITION_LIMITS[LIFT_JOINTS[0]])
             delta_limit = _MAX_SPEEDS["lift"] * step_dt
-            action[action_start] = _finite_clamp(target - current, -delta_limit, delta_limit) / scale
+            # 绝对位置动作：直接下发目标；误差小于 1mm 时下发当前值（保持，避免抖）
+            if abs(target - current) < 1.0e-3:
+                target = current
+            action[action_start] = target
         elif command.lift_velocity is not None:
             action_start, _ = ACTION_SLICES["lift_action"]
             scale = ACTION_SCALES["lift_position"]
             lift_delta = _finite_clamp(command.lift_velocity[0], -_MAX_SPEEDS["lift"], _MAX_SPEEDS["lift"]) * step_dt
-            action[action_start] = lift_delta / scale
+            if abs(lift_delta) < 1.0e-4:
+                lift_delta = 0.0
+            action[action_start] = current + lift_delta
 
         if command.head_position is not None:
             action_start, _ = ACTION_SLICES["head_action"]

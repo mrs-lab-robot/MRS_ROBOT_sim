@@ -62,7 +62,16 @@ MRS_ROBOT_CFG = ArticulationCfg(
             damping=None,
             effort_limit=None,
             velocity_limit=None,
-        )
+        ),
+        # lift_joint 的 USD 驱动（k=1e4, d=600, maxForce=3000）在运行时没有生效，
+        # 表现为立柱在重力下自己沉到底、任何指令都推不动。这里显式给一组增益。
+        "lift_drive": ImplicitActuatorCfg(
+            joint_names_expr=["lift_joint"],
+            stiffness=10000.0,
+            damping=600.0,
+            effort_limit=3000.0,
+            velocity_limit=0.1,
+        ),
     },
 )
 

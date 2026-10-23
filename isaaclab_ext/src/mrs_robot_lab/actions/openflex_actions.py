@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from isaaclab.envs.mdp.actions.actions_cfg import BinaryJointPositionActionCfg
+from isaaclab.envs.mdp.actions.actions_cfg import BinaryJointPositionActionCfg, JointPositionActionCfg
 from mrs_robot_lab.actions.latched_relative_joint_position_action import (
     LatchedRelativeJointPositionActionCfg,
 )
@@ -36,9 +36,11 @@ class OpenFlexActionsCfg:
         asset_name="robot", joint_names=list(RIGHT_ARM_JOINTS), preserve_order=True,
         scale=ACTION_SCALES["right_arm_position"], use_zero_offset=True,
     )
-    lift_action: ActionTermCfg = LatchedRelativeJointPositionActionCfg(
+    # 升降用「绝对位置」动作：relay 算出来的就是绝对目标（米），
+    # 相对动作的“零=保持/增量”语义在这里反复出错（立柱掉地、指令反向）。
+    lift_action: ActionTermCfg = JointPositionActionCfg(
         asset_name="robot", joint_names=list(LIFT_JOINTS), preserve_order=True,
-        scale=ACTION_SCALES["lift_position"], use_zero_offset=True,
+        scale=1.0, use_default_offset=False,
     )
     head_action: ActionTermCfg = LatchedRelativeJointPositionActionCfg(
         asset_name="robot", joint_names=list(HEAD_JOINTS), preserve_order=True,

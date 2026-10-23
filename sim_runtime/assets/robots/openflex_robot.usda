@@ -5237,7 +5237,7 @@ def Xform "openarmx_integrated" (
         )
         {
             float drive:linear:physics:damping = 600
-            float drive:linear:physics:maxForce = 500
+            float drive:linear:physics:maxForce = 3000
             float drive:linear:physics:stiffness = 10000
             uniform token drive:linear:physics:type = "force"
             bool[] isaac:actuator (
