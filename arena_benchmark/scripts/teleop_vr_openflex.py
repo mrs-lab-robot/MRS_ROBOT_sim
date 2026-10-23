@@ -151,10 +151,25 @@ def _joint_state(robot, field: str) -> tuple[list[float], dict[str, float]]:
     from mrs_robot_lab.adapters.teleop_adapter import JOINT_STATE_NAMES
 
     ordered = [float(by_name[name]) for name in JOINT_STATE_NAMES]
+    # PhysX 偶发输出 NaN 关节状态（reset/数值不稳）：用上次有效值兜底，
+    # 否则下游 teleop/recorder/mimic 全部抛 "must be finite" 中断整集采集。
+    if any(not math.isfinite(float(value)) for value in ordered):
+        cache_key = f"{id(robot)}:{field}"
+        fallback = _joint_state_cache.get(cache_key)
+        if fallback is not None:
+            print("ARENA_JOINT_STATE_NONFINITE sample_hold", flush=True)
+            return list(fallback), dict(zip(JOINT_STATE_NAMES, fallback))
+        # 首帧就 NaN：无法兜底，返回原值让上层决定（通常不会发生）
+        return ordered, by_name
+    _joint_state_cache[f"{id(robot)}:{field}"] = tuple(ordered)
     return ordered, by_name
 
 
+_joint_state_cache: dict[str, tuple[float, ...]] = {}
+
+
 def _lio_state(robot, env) -> tuple[list[float], list[float]]:
+    global _lio_state_cache
     from mrs_arena.adapters.navigation_observation import _torch_view
     from mrs_arena.tasks.navigation_logic import quaternion_xyzw_to_yaw
 
@@ -164,6 +179,28 @@ def _lio_state(robot, env) -> tuple[list[float], list[float]]:
     origins = _torch_view(env.unwrapped.scene.env_origins, field_name="env_origins")
     linear_velocity = _torch_view(data.root_lin_vel_b, field_name="root_lin_vel_b")
     angular_velocity = _torch_view(data.root_ang_vel_b, field_name="root_ang_vel_b")
+    pose, velocity = _lio_state_compute(
+        position, orientation, origins, linear_velocity, angular_velocity,
+        quaternion_xyzw_to_yaw,
+    )
+    return pose, velocity
+
+
+def _lio_state_compute(position, orientation, origins, linear_velocity, angular_velocity, quaternion_xyzw_to_yaw):
+    import torch
+    # PhysX 偶发 NaN root 状态：用上次有效 LIO 兜底，避免下游 yaw 转换抛错。
+    # 校验必须在 quaternion_xyzw_to_yaw 之前（该函数对 NaN 直接抛）。
+    global _lio_state_cache
+    raw = [position, orientation, linear_velocity, angular_velocity]
+    if any(
+        not bool(torch.isfinite(torch.as_tensor(v)).all().item())
+        for v in raw
+    ):
+        if _lio_state_cache is not None:
+            return [float(v) for v in _lio_state_cache[0]], [
+                float(v) for v in _lio_state_cache[1]
+            ]
+        raise ValueError("LIO root state is non-finite on first frame")
     yaw = quaternion_xyzw_to_yaw(orientation)
     pose = [
         float(position[0, 0] - origins[0, 0]),
@@ -175,7 +212,11 @@ def _lio_state(robot, env) -> tuple[list[float], list[float]]:
         float(linear_velocity[0, 1]),
         float(angular_velocity[0, 2]),
     ]
+    _lio_state_cache = (tuple(pose), tuple(velocity))
     return pose, velocity
+
+
+_lio_state_cache: tuple[tuple[float, ...], tuple[float, ...]] | None = None
 
 
 def main() -> None:
@@ -185,7 +226,7 @@ def main() -> None:
     parser.add_argument("--state-host", default="127.0.0.1")
     parser.add_argument("--state-port", type=int, default=24103)
     parser.add_argument("--camera-stream-host", default="127.0.0.1")
-    _add_positive_finite_float_option(parser, "--watchdog-timeout", default=0.25)
+    _add_positive_finite_float_option(parser, "--watchdog-timeout", default=1.0)
     parser.add_argument("--record-dir", default="outputs/datasets")
     parser.add_argument(
         "--data-mode",
@@ -508,12 +549,22 @@ def main() -> None:
                 raise RuntimeError(
                     f"Mimic 标注采集器初始化失败（--record-mimic-annotation 已开启）: {error}"
                 ) from error
-            print(
-                "ARENA_MIMIC_ANNOTATION_READY "
-                f"objects={','.join(mimic_collector.object_names) or '-'} "
-                f"subtasks={','.join(mimic_collector.subtask_labels) or '-'}",
-                flush=True,
-            )
+            # 干净/空场景没有任何可跟踪物体：Mimic 标注无意义且会在
+            # 采集时因「至少需要一个被跟踪物体」而崩溃，自动降级为不标注。
+            if not mimic_collector.object_names:
+                print(
+                    "ARENA_MIMIC_DISABLED no tracked objects in this scene; "
+                    "mimic annotation disabled",
+                    flush=True,
+                )
+                mimic_collector = None
+            else:
+                print(
+                    "ARENA_MIMIC_ANNOTATION_READY "
+                    f"objects={','.join(mimic_collector.object_names) or '-'} "
+                    f"subtasks={','.join(mimic_collector.subtask_labels) or '-'}",
+                    flush=True,
+                )
 
         robot_view = getattr(robot, "root_view", None)
         robot_prim_paths = getattr(robot_view, "prim_paths", ())
@@ -758,11 +809,15 @@ def main() -> None:
                 break
 
             command = watchdog.latest
+            # 位置目标（双臂/头/升降）用陈旧数据是安全的：最坏情况就是“保持在上一个目标”，
+            # 而真机同样没有这层门控（电机收不到新命令就原地保持）。真正需要新鲜度的是
+            # 底盘速度指令 —— relay 已在 base_twist 过期时写 0，chassis 节点自己也有超时。
+            # 因此这里不再用 watchdog 门控位置动作，否则报文一稀疏就整机冻结。
             actions = action_from_command(
                 command,
                 current_by_name,
                 step_dt=float(env.unwrapped.step_dt),
-                motion_enabled=watchdog.motion_enabled(time.monotonic()) and not local_estop,
+                motion_enabled=not local_estop,
             )
             action_tensor.zero_()
             row = action_tensor[0] if action_tensor.ndim == 2 else action_tensor

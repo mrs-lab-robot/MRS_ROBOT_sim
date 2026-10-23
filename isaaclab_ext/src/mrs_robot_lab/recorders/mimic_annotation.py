@@ -145,6 +145,7 @@ class MimicAnnotationCollector:
             tuple(subtask_labels) if subtask_labels is not None else hint_labels
         )
         self._pick_cube_initial_z: float | None = None
+        self._last_eef_pose: dict[str, list[list[float]]] = {}
         self.object_names: tuple[str, ...] = self._resolve_object_names()
 
     def begin_episode(self) -> None:
@@ -245,7 +246,29 @@ class MimicAnnotationCollector:
             state = body_state[0, body_index].detach().to(device="cpu", dtype=torch.float32)
             position = state[0:3]
             quat = state[3:7]
-            eef_poses.append(_finite_pose(position, quat))
+            # reset 后 body_state_w 偶发 NaN：用上一帧有效位姿（sample-and-hold），
+            # 不中断采集（之前直接抛错导致整集报废）。
+            if not all(math.isfinite(float(v)) for v in position) or \
+               not all(math.isfinite(float(v)) for v in quat):
+                if self._last_eef_pose.get(side) is not None:
+                    eef_poses.append(self._last_eef_pose[side])
+                    target_poses.append(self._last_eef_pose[side])
+                    continue
+                # 首帧（reset 后）body_state_w 偶发 NaN：用单位四元数 + 关节兜底位置
+                # 占位，避免中断整集（PhysX 第二帧即恢复正常）。
+                fallback_pos = [0.0, 0.0, 0.8]
+                fallback_quat = [0.0, 0.0, 0.0, 1.0]
+                pose = _finite_pose(
+                    torch.tensor(fallback_pos, dtype=torch.float32),
+                    torch.tensor(fallback_quat, dtype=torch.float32),
+                )
+                self._last_eef_pose[side] = pose
+                eef_poses.append(pose)
+                target_poses.append(pose)
+                continue
+            pose = _finite_pose(position, quat)
+            self._last_eef_pose[side] = pose
+            eef_poses.append(pose)
 
             # action_to_target_eef_pose() semantics for joint-space actions:
             # propagate the commanded joint delta through the arm Jacobian.

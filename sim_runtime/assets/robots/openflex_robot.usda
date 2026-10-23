@@ -7,8 +7,8 @@
                 double radius = 5
             }
             dictionary Perspective = {
-                double3 position = (5, 5, 5)
-                double3 target = (-3.978038431995401e-8, -3.978038254359717e-8, 7.956076863990802e-8)
+                double3 position = (3.829969872756039, -3.113520179543358, 1.6548771636301742)
+                double3 target = (-0.3367365925089043, 0.43678313252497114, 0.6293481542425774)
             }
             dictionary Right = {
                 double3 position = (0, -5, 0)
@@ -21,6 +21,9 @@
             string boundCamera = "/OmniverseKit_Persp"
         }
         string creator = "URDF USD Converter v0.1.3"
+        dictionary omni_layer = {
+            string authoring_layer = "./openflex_robot.usda"
+        }
         dictionary renderSettings = {
         }
     }
@@ -1896,8 +1899,10 @@ def Xform "openarmx_integrated" (
         </openarmx_integrated/Geometry/base_link/lift_carriage_link/head_pitch_link/head_yaw_link>,
     ]
     token isaac:robotType = "Default"
-    double3 xformOp:translate = (0, 0, 0.17500054748826666)
-    uniform token[] xformOpOrder = ["xformOp:translate"]
+    quatf xformOp:orient = (1, 0, 0, 0)
+    float3 xformOp:scale = (1, 1, 1)
+    double3 xformOp:translate = (0, 0, 0.46703898408524713)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
 
     def Scope "Materials"
     {
@@ -5077,6 +5082,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -90.00021
             float physics:upperLimit = 90.00021
             float physxJoint:maxJointVelocity = 572.9578
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 10
             custom float urdf:limit:velocity = 10
         }
@@ -5095,6 +5102,8 @@ def Xform "openarmx_integrated" (
             point3f physics:localPos1 = (0, 0, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
         }
 
         def PhysicsRevoluteJoint "fr_steering_joint" (
@@ -5115,6 +5124,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -90.00021
             float physics:upperLimit = 90.00021
             float physxJoint:maxJointVelocity = 572.9578
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 10
             custom float urdf:limit:velocity = 10
         }
@@ -5133,6 +5144,8 @@ def Xform "openarmx_integrated" (
             point3f physics:localPos1 = (0, 0, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
         }
 
         def PhysicsRevoluteJoint "bl_steering_joint" (
@@ -5153,6 +5166,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -90.00021
             float physics:upperLimit = 90.00021
             float physxJoint:maxJointVelocity = 572.9578
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 10
             custom float urdf:limit:velocity = 10
         }
@@ -5171,6 +5186,8 @@ def Xform "openarmx_integrated" (
             point3f physics:localPos1 = (0, 0, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
         }
 
         def PhysicsRevoluteJoint "br_steering_joint" (
@@ -5191,6 +5208,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -90.00021
             float physics:upperLimit = 90.00021
             float physxJoint:maxJointVelocity = 572.9578
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 10
             custom float urdf:limit:velocity = 10
         }
@@ -5209,16 +5228,27 @@ def Xform "openarmx_integrated" (
             point3f physics:localPos1 = (0, 0, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
         }
 
         def PhysicsPrismaticJoint "lift_joint" (
             apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:linear", "PhysicsJointStateAPI:linear", "IsaacJointAPI"]
         )
         {
-            float drive:linear:physics:damping = 300
+            float drive:linear:physics:damping = 600
             float drive:linear:physics:maxForce = 500
-            float drive:linear:physics:stiffness = 2500
+            float drive:linear:physics:stiffness = 10000
             uniform token drive:linear:physics:type = "force"
+            bool[] isaac:actuator (
+                displayName = "Actuator"
+            )
+            string isaac:NameOverride (
+                displayName = "Joint Name Override"
+            )
+            token[] isaac:physics:DofOffsetOpOrder (
+                displayName = "Dof Offset Op Order"
+            )
             custom float mjc:frictionloss = 1
             uniform token physics:axis = "Z"
             rel physics:body0 = </openarmx_integrated/Geometry/base_link>
@@ -5231,6 +5261,8 @@ def Xform "openarmx_integrated" (
             float physics:upperLimit = 0.3
             float physxJoint:jointFriction = 1
             float physxJoint:maxJointVelocity = 0.1
+            float state:linear:physics:position = 0
+            float state:linear:physics:velocity = 0
             custom float urdf:dynamics:damping = 5
             custom float urdf:dynamics:friction = 1
             custom float urdf:limit:effort = 3000
@@ -5255,6 +5287,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -191.61978
             float physics:upperLimit = 51.887287
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 120
             custom float urdf:limit:velocity = 10.47
         }
@@ -5277,6 +5311,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -187.40283
             float physics:upperLimit = 7.4028254
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 120
             custom float urdf:limit:velocity = 10.47
         }
@@ -5299,6 +5335,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -89.95438
             float physics:upperLimit = 89.95438
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 60
             custom float urdf:limit:velocity = 10.47
         }
@@ -5321,6 +5359,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = 0
             float physics:upperLimit = 103.1324
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 60
             custom float urdf:limit:velocity = 10.47
         }
@@ -5343,6 +5383,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -85.94367
             float physics:upperLimit = 85.94367
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 14
             custom float urdf:limit:velocity = 10.47
         }
@@ -5365,6 +5407,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -42.971836
             float physics:upperLimit = 42.971836
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 14
             custom float urdf:limit:velocity = 10.47
         }
@@ -5387,6 +5431,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -80.21409
             float physics:upperLimit = 80.21409
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 14
             custom float urdf:limit:velocity = 10.47
         }
@@ -5409,6 +5455,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -71.61973
             float physics:upperLimit = 171.88734
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 120
             custom float urdf:limit:velocity = 10.47
         }
@@ -5431,6 +5479,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -7.4028254
             float physics:upperLimit = 187.40283
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 120
             custom float urdf:limit:velocity = 10.47
         }
@@ -5453,6 +5503,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -89.95438
             float physics:upperLimit = 89.95438
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 60
             custom float urdf:limit:velocity = 10.47
         }
@@ -5475,6 +5527,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = 0
             float physics:upperLimit = 103.1324
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 60
             custom float urdf:limit:velocity = 10.47
         }
@@ -5497,6 +5551,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -85.94367
             float physics:upperLimit = 85.94367
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 14
             custom float urdf:limit:velocity = 10.47
         }
@@ -5519,6 +5575,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -42.971836
             float physics:upperLimit = 42.971836
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 14
             custom float urdf:limit:velocity = 10.47
         }
@@ -5541,6 +5599,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -80.21409
             float physics:upperLimit = 80.21409
             float physxJoint:maxJointVelocity = 599.88684
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 14
             custom float urdf:limit:velocity = 10.47
         }
@@ -5563,6 +5623,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = 0
             float physics:upperLimit = 0.044
             float physxJoint:maxJointVelocity = 572.9578
+            float state:linear:physics:position = 0
+            float state:linear:physics:velocity = 0
             custom float urdf:limit:effort = 333
             custom float urdf:limit:velocity = 10
         }
@@ -5586,6 +5648,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = 0
             float physics:upperLimit = 0.044
             float physxJoint:maxJointVelocity = 572.9578
+            float state:linear:physics:position = 0
+            float state:linear:physics:velocity = 0
             custom float urdf:limit:effort = 333
             custom float urdf:limit:velocity = 10
         }
@@ -5608,6 +5672,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = 0
             float physics:upperLimit = 0.044
             float physxJoint:maxJointVelocity = 572.9578
+            float state:linear:physics:position = 0
+            float state:linear:physics:velocity = 0
             custom float urdf:limit:effort = 333
             custom float urdf:limit:velocity = 10
         }
@@ -5631,6 +5697,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = 0
             float physics:upperLimit = 0.044
             float physxJoint:maxJointVelocity = 572.9578
+            float state:linear:physics:position = 0
+            float state:linear:physics:velocity = 0
             custom float urdf:limit:effort = 333
             custom float urdf:limit:velocity = 10
         }
@@ -5653,6 +5721,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -90.00021
             float physics:upperLimit = 90.00021
             float physxJoint:maxJointVelocity = 1890.7607
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 14
             custom float urdf:limit:velocity = 33
         }
@@ -5675,6 +5745,8 @@ def Xform "openarmx_integrated" (
             float physics:lowerLimit = -90.00021
             float physics:upperLimit = 90.00021
             float physxJoint:maxJointVelocity = 1890.7607
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
             custom float urdf:limit:effort = 14
             custom float urdf:limit:velocity = 33
         }
@@ -6000,17 +6072,51 @@ def Xform "openarmx_integrated" (
     }
 }
 
-def "Render"
+def "Render" (
+    no_delete = true
+)
 {
     def "OmniverseKit"
     {
-        def "HydraTextures"
+        def "HydraTextures" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
         {
             def RenderProduct "omni_kit_widget_viewport_ViewportTexture_0" (
                 apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                hide_in_stage_window = true
+                no_delete = true
             )
             {
                 rel camera = </OmniverseKit_Persp>
+                token omni:rtx:ambientOcclusion:denoiserMode = "none"
+                token omni:rtx:background:source:texture:textureMode = "repeatMirrored"
+                token omni:rtx:background:source:type = "domeLight"
+                bool omni:rtx:debug:view:pixelDebug:enableFixedTextPos = 1
+                token omni:rtx:directLighting:sampledLighting:denoisingTechnique = "None"
+                bool omni:rtx:dlss:frameGeneration = 0
+                float3 omni:rtx:domeLight:rotationAxis = (0, 0, 1)
+                bool omni:rtx:indirectDiffuse:denoiser:enabled = 0
+                bool omni:rtx:material:db:syncLoads = 1
+                token omni:rtx:post:dlss:execMode = "performance"
+                bool omni:rtx:post:registeredCompositing:invertColorCorrection = 1
+                bool omni:rtx:post:registeredCompositing:invertToneMap = 1
+                bool omni:rtx:pt:adaptiveSampling:filterError = 0
+                uint omni:rtx:pt:adaptiveSampling:fixedSppIterations = 2
+                uint omni:rtx:pt:maxSamplesPerLaunch = 2073600
+                uint omni:rtx:pt:mgpu:maxPixelsPerRegionExponent = 12
+                bool omni:rtx:reflections:denoiser:enabled = 0
+                token omni:rtx:rendermode = "RealTimePathTracing"
+                color3f omni:rtx:rt:ambientLight:color = (0.1, 0.1, 0.1)
+                bool omni:rtx:rt:demoire = 0
+                bool omni:rtx:rt:ecoMode:enabled
+                bool omni:rtx:rt:lightcache:spatialCache:dontResolveConflicts = 1
+                int omni:rtx:rt:sss:samples = 1
+                uint omni:rtx:rtpt:maxVolumeBounces = 15
+                float omni:rtx:rtpt:modulatingRoughnessThreshold = 0.08
+                bool omni:rtx:scene:hydra:materialSyncLoads = 1
+                bool omni:rtx:scene:hydra:mdlMaterialWarmup = 1
                 rel orderedVars = </Render/Vars/LdrColor>
                 custom bool overrideClipRange = 0
                 uniform int2 resolution = (1280, 720)
@@ -6045,16 +6151,21 @@ over "OmniverseKit_Persp" (
             }
         }
     }
+    hide_in_stage_window = true
     kind = "component"
+    no_delete = true
 )
 {
     float2 clippingRange = (0.01, 10000000)
+    float exposure:fStop = 5
+    float exposure:responsivity = 1.1026709
+    float exposure:time = 0.02
     float focalLength = 18.147562
     float focusDistance = 400
-    custom uniform vector3d omni:kit:centerOfInterest = (0, 0, -8.660254037844386)
-    float3 xformOp:rotateXYZ = (54.73561, -6.3611094e-15, 135)
+    custom uniform vector3d omni:kit:centerOfInterest = (0, 0, -5.569363170458498)
+    float3 xformOp:rotateXYZ = (79.389145, 4.770832e-14, 49.566856)
     float3 xformOp:scale = (1, 1, 1)
-    double3 xformOp:translate = (5, 5, 5)
+    double3 xformOp:translate = (3.829969872756039, -3.113520179543358, 1.6548771636301742)
     uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
 }
 
@@ -6067,7 +6178,9 @@ over "OmniverseKit_Front" (
             }
         }
     }
+    hide_in_stage_window = true
     kind = "component"
+    no_delete = true
 )
 {
     float2 clippingRange = (1, 10000000)
@@ -6090,7 +6203,9 @@ over "OmniverseKit_Right" (
             }
         }
     }
+    hide_in_stage_window = true
     kind = "component"
+    no_delete = true
 )
 {
     float2 clippingRange = (1, 10000000)
@@ -6113,7 +6228,9 @@ over "OmniverseKit_Top" (
             }
         }
     }
+    hide_in_stage_window = true
     kind = "component"
+    no_delete = true
 )
 {
     float2 clippingRange = (1, 10000000)
@@ -6125,5 +6242,11 @@ over "OmniverseKit_Top" (
     float3 xformOp:scale = (1, 1, 1)
     double3 xformOp:translate = (0, 0, 5)
     uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+}
+
+def PhysicsScene "PhysicsScene" (
+    prepend apiSchemas = ["NewtonSceneAPI", "PhysxSceneAPI"]
+)
+{
 }
 

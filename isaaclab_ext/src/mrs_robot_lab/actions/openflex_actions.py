@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from isaaclab.envs.mdp.actions.actions_cfg import BinaryJointPositionActionCfg, RelativeJointPositionActionCfg
+from isaaclab.envs.mdp.actions.actions_cfg import BinaryJointPositionActionCfg
+from mrs_robot_lab.actions.latched_relative_joint_position_action import (
+    LatchedRelativeJointPositionActionCfg,
+)
 from isaaclab.managers import ActionTermCfg
 from isaaclab.utils.configclass import configclass
 
@@ -25,19 +28,19 @@ class OpenFlexActionsCfg:
     """Contract-ordered actions; the base action remains simulator-native."""
 
     base_twist_action: ActionTermCfg = SwerveBaseActionCfg(asset_name="robot")
-    left_arm_action: ActionTermCfg = RelativeJointPositionActionCfg(
+    left_arm_action: ActionTermCfg = LatchedRelativeJointPositionActionCfg(
         asset_name="robot", joint_names=list(LEFT_ARM_JOINTS), preserve_order=True,
         scale=ACTION_SCALES["left_arm_position"], use_zero_offset=True,
     )
-    right_arm_action: ActionTermCfg = RelativeJointPositionActionCfg(
+    right_arm_action: ActionTermCfg = LatchedRelativeJointPositionActionCfg(
         asset_name="robot", joint_names=list(RIGHT_ARM_JOINTS), preserve_order=True,
         scale=ACTION_SCALES["right_arm_position"], use_zero_offset=True,
     )
-    lift_action: ActionTermCfg = RelativeJointPositionActionCfg(
+    lift_action: ActionTermCfg = LatchedRelativeJointPositionActionCfg(
         asset_name="robot", joint_names=list(LIFT_JOINTS), preserve_order=True,
         scale=ACTION_SCALES["lift_position"], use_zero_offset=True,
     )
-    head_action: ActionTermCfg = RelativeJointPositionActionCfg(
+    head_action: ActionTermCfg = LatchedRelativeJointPositionActionCfg(
         asset_name="robot", joint_names=list(HEAD_JOINTS), preserve_order=True,
         scale=ACTION_SCALES["head_position"], use_zero_offset=True,
     )

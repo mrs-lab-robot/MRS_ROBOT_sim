@@ -23,6 +23,14 @@ class OpenFlexTaskProfile:
 
 _PROFILES = (
     OpenFlexTaskProfile(
+        task_id="openflex_empty_scene",
+        scene_id="openflex_empty_scene",
+        display_name="OpenFlex 干净场景（无干扰）",
+        description="只有机器人+地面+灯光的空场景，用于隔离物体对控制的干扰。",
+        factory="make_openflex_empty_environment",
+        randomization_keys=(),
+    ),
+    OpenFlexTaskProfile(
         task_id="openflex_dual_arm_box_transport",
         scene_id="openflex_box_transport",
         display_name="OpenFlex 双臂搬箱",

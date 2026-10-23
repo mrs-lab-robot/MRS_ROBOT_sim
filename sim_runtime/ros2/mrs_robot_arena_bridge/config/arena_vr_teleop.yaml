@@ -5,7 +5,7 @@
     state_port: 24103
     camera_stream_port: 24104
     control_rate_hz: 90.0
-    deadman_timeout: 0.25
+    deadman_timeout: 1.0
     vr_estop_topic: /vr_estop_active
     left_pose_topic: /pico_left_controller/pose
     right_pose_topic: /pico_right_controller/pose

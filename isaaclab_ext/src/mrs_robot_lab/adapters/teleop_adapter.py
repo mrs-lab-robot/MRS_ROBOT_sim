@@ -120,6 +120,9 @@ def action_from_command(
         action_index, _ = ACTION_SLICES[action_term]
         low, high = limits[0]
         position = desired[0] if enabled and desired is not None else float(current_joint_positions[joints[0]])
+        if not math.isfinite(float(position)):
+            # reset 后仿真偶发 NaN 状态：gripper 目标回退到当前实际位置，不中断。
+            position = float(current_joint_positions[joints[0]])
         # Existing BinaryJointPositionAction uses non-negative=open, negative=close.
         action[action_index] = 1.0 if _finite_clamp(position, low, high) > (low + high) / 2 else -1.0
 

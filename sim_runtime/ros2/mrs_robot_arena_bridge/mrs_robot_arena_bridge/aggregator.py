@@ -102,7 +102,10 @@ class CommandAggregator:
         self._lift_action_min_position = -0.650
         self._lift_action_max_position = 0.300
         self._lift_action_max_velocity = 0.100
-        self._lift_action_command_timeout = 0.250
+        # 升降 jog 是「速度设定」而不是心跳：升降节点只在方向变化时发一次
+        # （按下发 +0.05，松开发 0），如果这里按心跳超时处理，按住按钮也只积分
+        # 0.25s ≈ 1.2cm，肉眼等于不动。改成「保持到下一次命令」。
+        self._lift_action_command_timeout = 3600.0
 
     @staticmethod
     def _values(values, count: int, label: str) -> tuple[float, ...]:
@@ -243,7 +246,7 @@ class CommandAggregator:
         )
         lift_fresh = (
             self.last_lift_velocity_time is not None
-            and now - self.last_lift_velocity_time <= self.deadman_timeout
+            and now - self.last_lift_velocity_time <= self._lift_action_command_timeout
         )
         return RelayCommandFrame(
             seq=self.seq,
@@ -263,7 +266,10 @@ class CommandAggregator:
             button_states=dict(self.button_states),
             left_arm_position=self.left_arm_position,
             right_arm_position=self.right_arm_position,
-            lift_position=self.lift_position,
+            # 发送「绝对目标」而不是速度：动作层对 lift_position 是直接追目标，
+            # 对 lift_velocity 需要逐帧积分，任一端语义偏差都会表现为"升降不动"。
+            # lift_action_position 是 relay 自己按 jog 积分出来的绝对目标（已限幅）。
+            lift_position=lift_action_position if lift_action_position is not None else self.lift_position,
             lift_velocity=(self.lift_velocity if lift_fresh else ((0.0,) if self.lift_velocity is not None else None)),
             lift_action_position=lift_action_position,
             head_position=self.head_position,

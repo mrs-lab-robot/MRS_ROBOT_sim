@@ -59,6 +59,20 @@ source install/setup.bash
 
 `vcs import` 只检出源码，不会构建依赖。若 underlay 缺少某个包，应按其自身文档先构建并 source，再构建本 overlay。
 
+**underlay 必须是完整构建的 `openflex_ws`**（colcon build 全部包，不是只编 GUI）。仿真遥操作链路（`arena_vr_teleop.launch.py`）会 include `openarmx_integrated_bringup` 的 launch，并进一步依赖 `openarmx_teleop_vr`、`swerve_bringup`、`openarmx_description` 等整套控制栈包。underlay 缺包的典型症状：GUI「Arena ROS 桥」启动即报 `package 'openarmx_integrated_bringup' not found`、状态 error、退出码 1。排查命令：
+
+```bash
+comm -23 \
+  <(find <openflex_ws>/src -name package.xml -exec grep -oP '(?<=<name>)[^<]+' {} \; | sort -u) \
+  <(ls <openflex_ws>/install | grep -vE 'setup|_local|COLCON' | sort)
+```
+
+按 package.xml 内声明的包名比对（不要按目录名——历史上存在目录名与包名不一致的包，如 `openarmx_head_visio_h264` 目录内的包名是 `openarmx_head_vision_h264`）。
+
+输出非空即 install 缺包，回到 `openflex_ws` 目录补跑 `colcon build --symlink-install` 即可。
+
+> 环境坑：系统 Python 用户目录（`~/.local/lib/python3.10`）若装有 numpy ≥ 2.0，会使 ROS Humble 的 pinocchio 崩溃（`AttributeError: _ARRAY_API not found`），进而令 `openarmx_teleop_vr_node` 段错误。修复：`pip3 install --user 'numpy==1.26.4'`。
+
 ## 创建 Arena Python 环境
 
 以下命令使用上游锁定的 Python 3.12 wheel 依赖组：

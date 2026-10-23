@@ -115,6 +115,32 @@ def make_openflex_task_smoke_environment(dataset_dir: str) -> IsaacLabArenaEnvir
     )
 
 
+def make_openflex_empty_environment(
+    dataset_dir: str = "outputs/datasets", *, enable_cameras: bool = False
+) -> IsaacLabArenaEnvironment:
+    """Build the clean no-distraction scene: ground + light + robot only.
+
+    Used to isolate the robot's own control (base drive / arm IK / sensors)
+    from scene objects like tables, boxes, or walls.
+    """
+    from mrs_arena.tasks.openflex_empty_task import OpenFlexEmptyTask
+
+    task = OpenFlexEmptyTask()
+
+    def configure_recording(cfg):
+        cfg.recorders.dataset_export_dir_path = dataset_dir
+        cfg.recorders.dataset_filename = "openflex_empty_scene"
+        return cfg
+
+    return IsaacLabArenaEnvironment(
+        name="openflex_empty_scene",
+        scene=_OpenFlexSmokeScene(),
+        embodiment=OpenFlexEmbodiment(enable_cameras=enable_cameras),
+        task=task,
+        env_cfg_callback=configure_recording,
+    )
+
+
 def make_openflex_pick_cube_environment(
     dataset_dir: str = "outputs/datasets", *, enable_cameras: bool = False
 ) -> IsaacLabArenaEnvironment:
