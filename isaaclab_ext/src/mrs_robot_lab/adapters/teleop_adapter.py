@@ -25,9 +25,9 @@ from mrs_teleoperation.protocol import CommandFrame
 
 ARM_NAMES = {"left": LEFT_ARM_JOINTS, "right": RIGHT_ARM_JOINTS}
 _MAX_SPEEDS = {
-    "arm": 4.00,  # rad/s（0.35 -> 1.2 -> 2.4 -> 4.0）
-    "lift": 0.15,  # m/s（原 0.05）
-    "head": 3.60,  # rad/s（0.5 -> 2.0 -> 2.6 -> 3.6）
+    "arm": 6.00,  # rad/s（0.35 -> 1.2 -> 2.4 -> 4.0 -> 6.0）
+    "lift": 0.20,  # m/s（0.05 -> 0.15 -> 0.20）
+    "head": 4.50,  # rad/s（0.5 -> 2.0 -> 2.6 -> 3.6 -> 4.5）
 }
 
 

@@ -13,6 +13,8 @@ from isaaclab.assets.articulation.articulation_cfg import ArticulationCfg
 from mrs_robot_lab.actions.openflex_actions import OpenFlexActionsCfg
 from mrs_robot_lab.assets.robot_interface import (
     JOINT_STATE_NAMES,
+    LEFT_GRIPPER_MIMICS,
+    RIGHT_GRIPPER_MIMICS,
     ROBOT_CONTRACT,
     ROBOT_RESOLVER,
     SWERVE_CONFIG,
@@ -25,12 +27,19 @@ def _initial_joint_positions() -> dict[str, float]:
         *ROBOT_CONTRACT.joint_action_names,
         *SWERVE_CONFIG.steering_joint_names,
         *SWERVE_CONFIG.wheel_joint_names,
+        *LEFT_GRIPPER_MIMICS,
+        *RIGHT_GRIPPER_MIMICS,
     )
     positions = dict.fromkeys(joint_names, 0.0)
     left_finger = ROBOT_CONTRACT.action_joints["left_gripper_position"][0]
     right_finger = ROBOT_CONTRACT.action_joints["right_gripper_position"][0]
     positions[left_finger] = ROBOT_CONTRACT.action_limits["left_gripper_position"][0][1]
     positions[right_finger] = ROBOT_CONTRACT.action_limits["right_gripper_position"][0][1]
+    # 第二根手指也要给同样开度，否则它停在 0（闭合）→ 开机就是歪夹爪。
+    for finger, mimics in ((left_finger, LEFT_GRIPPER_MIMICS), (right_finger, RIGHT_GRIPPER_MIMICS)):
+        for mimic in mimics:
+            if mimic in positions:
+                positions[mimic] = positions[finger]
     return positions
 
 

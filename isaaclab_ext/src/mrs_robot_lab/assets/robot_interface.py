@@ -52,6 +52,25 @@ RIGHT_GRIPPER_JOINTS = ROBOT_CONTRACT.action_joints["right_gripper_position"]
 LEFT_GRIPPER_LIMITS = ROBOT_CONTRACT.action_limits["left_gripper_position"]
 RIGHT_GRIPPER_LIMITS = ROBOT_CONTRACT.action_limits["right_gripper_position"]
 
+
+def _mimic_finger(joints: tuple[str, ...]) -> tuple[str, ...]:
+    """URDF 里第二根手指用 <mimic> 跟随第一根。
+
+    USD 导入时这个耦合变成了 ``NewtonMimicAPI``（PhysX 不认），仿真里只有 joint1 会动，
+    夹爪实际只张开一半而且不对称。这里按名字推导出第二根手指，供动作层一起驱动。
+    """
+
+    if not joints:
+        return ()
+    first = joints[0]
+    if not first.endswith("1"):
+        return ()
+    return (first[:-1] + "2",)
+
+
+LEFT_GRIPPER_MIMICS = _mimic_finger(LEFT_GRIPPER_JOINTS)
+RIGHT_GRIPPER_MIMICS = _mimic_finger(RIGHT_GRIPPER_JOINTS)
+
 ACTION_JOINTS_BY_TERM = {
     "left_arm_action": LEFT_ARM_JOINTS,
     "right_arm_action": RIGHT_ARM_JOINTS,

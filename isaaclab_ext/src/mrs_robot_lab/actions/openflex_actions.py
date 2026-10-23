@@ -15,10 +15,12 @@ from mrs_robot_lab.assets.robot_interface import (
     LEFT_ARM_JOINTS,
     LEFT_GRIPPER_JOINTS,
     LEFT_GRIPPER_LIMITS,
+    LEFT_GRIPPER_MIMICS,
     LIFT_JOINTS,
     RIGHT_ARM_JOINTS,
     RIGHT_GRIPPER_JOINTS,
     RIGHT_GRIPPER_LIMITS,
+    RIGHT_GRIPPER_MIMICS,
     ACTION_SCALES,
 )
 
@@ -46,15 +48,30 @@ class OpenFlexActionsCfg:
         asset_name="robot", joint_names=list(HEAD_JOINTS), preserve_order=True,
         scale=ACTION_SCALES["head_position"], use_zero_offset=True,
     )
+    # 夹爪：URDF 里 finger_joint2 靠 <mimic> 跟随 finger_joint1，但导入 USD 时变成了
+    # NewtonMimicAPI（PhysX 不认）→ 仿真里只有 joint1 动，夹爪只张开一半且不对称。
+    # 这里两根手指一起驱动（数值相同即对称张开），动作维度仍是 1，数据集布局不变。
     left_gripper_action: ActionTermCfg = BinaryJointPositionActionCfg(
         asset_name="robot",
-        joint_names=list(LEFT_GRIPPER_JOINTS),
-        open_command_expr={LEFT_GRIPPER_JOINTS[0]: LEFT_GRIPPER_LIMITS[0][1]},
-        close_command_expr={LEFT_GRIPPER_JOINTS[0]: LEFT_GRIPPER_LIMITS[0][0]},
+        joint_names=[*LEFT_GRIPPER_JOINTS, *LEFT_GRIPPER_MIMICS],
+        open_command_expr={
+            LEFT_GRIPPER_JOINTS[0]: LEFT_GRIPPER_LIMITS[0][1],
+            LEFT_GRIPPER_MIMICS[0]: LEFT_GRIPPER_LIMITS[0][1],
+        },
+        close_command_expr={
+            LEFT_GRIPPER_JOINTS[0]: LEFT_GRIPPER_LIMITS[0][0],
+            LEFT_GRIPPER_MIMICS[0]: LEFT_GRIPPER_LIMITS[0][0],
+        },
     )
     right_gripper_action: ActionTermCfg = BinaryJointPositionActionCfg(
         asset_name="robot",
-        joint_names=list(RIGHT_GRIPPER_JOINTS),
-        open_command_expr={RIGHT_GRIPPER_JOINTS[0]: RIGHT_GRIPPER_LIMITS[0][1]},
-        close_command_expr={RIGHT_GRIPPER_JOINTS[0]: RIGHT_GRIPPER_LIMITS[0][0]},
+        joint_names=[*RIGHT_GRIPPER_JOINTS, *RIGHT_GRIPPER_MIMICS],
+        open_command_expr={
+            RIGHT_GRIPPER_JOINTS[0]: RIGHT_GRIPPER_LIMITS[0][1],
+            RIGHT_GRIPPER_MIMICS[0]: RIGHT_GRIPPER_LIMITS[0][1],
+        },
+        close_command_expr={
+            RIGHT_GRIPPER_JOINTS[0]: RIGHT_GRIPPER_LIMITS[0][0],
+            RIGHT_GRIPPER_MIMICS[0]: RIGHT_GRIPPER_LIMITS[0][0],
+        },
     )
