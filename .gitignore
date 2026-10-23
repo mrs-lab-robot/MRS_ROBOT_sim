@@ -48,3 +48,6 @@ isaac_sim_core/assets/generated/
 .vscode/
 .DS_Store
 *.swp
+
+# 训练/评估产物
+outputs/

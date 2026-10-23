@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import hashlib
+import os
 import json
 from pathlib import Path
 from typing import Any
@@ -172,12 +173,32 @@ def load_checkpoint_metadata(
     task_spec_path = Path(manifest["task_spec"]).expanduser().resolve(strict=True)
     scene_spec_path = Path(manifest["scene_spec"]).expanduser().resolve(strict=True)
 
-    # isaaclab_ext 的 evaluate_navigation_ppo.py 使用相对路径获取 contract
-    # 这里我们需要找到正确的 contract 路径
-    repo_root = checkpoint.parents[3]  # checkpoint -> checkpoints -> run_dir -> isaaclab_ext -> repo_root
-    contract_path = (
-        repo_root / "sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract/config/embodiment.yaml"
-    ).resolve(strict=True)
+    # contract 路径：以前写死 `checkpoint.parents[3]`（假定 run_dir 恰好在
+    # <repo>/isaaclab_ext/outputs/<x> 三层下），而默认训练输出
+    # outputs/training/navigation/<run>/checkpoints/*.pt 的 parents[3] 是
+    # outputs/training，评估必然 FileNotFoundError。改成从 checkpoint 往上找
+    # 第一个带该 contract 的目录，训练放在仓库内、仓库外都不影响。
+    contract_relative = Path(
+        "sim_runtime/ros2/openflex_isaac_sim/openflex_isaac_contract/config/embodiment.yaml"
+    )
+    contract_path = None
+    for ancestor in checkpoint.parents[:8]:
+        candidate = ancestor / contract_relative
+        if candidate.is_file():
+            contract_path = candidate.resolve()
+            break
+    if contract_path is None:
+        # 训练产物被搬到仓库外时（例如 /tmp、数据盘），用环境变量兜底。
+        root_env = os.environ.get("MRS_ROBOT_SIM_ROOT", "").strip()
+        if root_env:
+            candidate = Path(root_env).expanduser() / contract_relative
+            if candidate.is_file():
+                contract_path = candidate.resolve()
+    if contract_path is None:
+        raise FileNotFoundError(
+            "cannot locate embodiment contract above checkpoint "
+            f"{checkpoint} (looked for {contract_relative} in up to 8 parent dirs)"
+        )
 
     # 计算配置哈希
     task_spec_sha256 = _sha256_file(task_spec_path)

@@ -111,28 +111,88 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"Checkpoint validation failed: {error}")
 
     # 初始化 Isaac Sim/Kit（必须在导入 torch 和 RL 栈之前）
+    #
+    # 坑：isaacsim 的 SimulationApp 会把「自己不认识」的 argv 原样转给 Kit
+    # （simulation_app.py: "Passing the following args to the base kit application"），
+    # 我们的 --checkpoint/--num-episodes/--seed-start 就这样进了 Kit 的启动参数，
+    # Kit 解析失败后直接 quick-shutdown（进程 rc=0、无 traceback，看着像“什么都没发生”）。
+    # 所以创建 app 前把业务参数从 argv 里摘掉，并只传 AppLauncher 认识的字段。
+    business_flags = ("--checkpoint", "--num-episodes", "--seed-start")
+    saved_argv = list(sys.argv)
+    sanitized_argv = [saved_argv[0]]
+    skip_next = False
+    for token in saved_argv[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in business_flags:
+            skip_next = True
+            continue
+        if any(token.startswith(flag + "=") for flag in business_flags):
+            continue
+        sanitized_argv.append(token)
+    launcher_fields = (
+        "headless", "enable_cameras", "device", "kit_args", "experience", "livestream",
+        "enable_replicator", "disable_fabric", "max_gpu_count", "offscreen_render",
+        "renderer", "verbose", "xr",
+    )
+    launcher_args = argparse.Namespace(
+        **{name: getattr(args, name) for name in launcher_fields if hasattr(args, name)}
+    )
     print(f"\nInitializing Isaac Sim (device={args.device}, headless={args.headless})...")
-    app_launcher = AppLauncher(args)
+    try:
+        sys.argv = sanitized_argv
+        app_launcher = AppLauncher(launcher_args)
+    finally:
+        sys.argv = saved_argv
+
+    # Kit 的扩展是异步装的：AppLauncher 返回时后台还在加载 extension，此刻立刻
+    # import torch / arena / rsl_rl 会与扩展初始化抢同一个进程——实测直接静默退出
+    # （rc=0、无 traceback，processlifetime 记 quick framework shutdown）。
+    # 先空转几帧把扩展装完再 import。
+    import time as _time
+    _warmup_deadline = _time.monotonic() + 2.0
+    while _time.monotonic() < _warmup_deadline:
+        app_launcher.app.update()
+
     environment = None
 
     try:
-        import torch
+        # 已知问题（本机实测）：`import mrs_arena.embodiments.openflex_navigation` 有时会让
+        # Kit 在 C++ 层直接退出（rc=0、无 traceback、processlifetime 记 quick framework
+        # shutdown，gdb 里也是正常 exit）。下面这串顺序 + 预热是踩出来的最稳组合，但**没有
+        # 100% 消除**；脚本可用的替代入口是 isaaclab_ext/scripts/evaluate_navigation_ppo.py
+        # （同 manifest/provenance 校验，已实测跑通）。
         from isaaclab_arena.assets.registries import AssetRegistry, TaskRegistry
         from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
         from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
-        from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
-        from rsl_rl.runners import OnPolicyRunner
+        print("  ✓ Arena stack imported", flush=True)
 
-        from mrs_robot_lab.environments.learning.navigation_evaluation import aggregate_episode_results
+        # 先把 isaaclab.sim / isaaclab.envs 拉起来（会触发 Kit 里传感、RTX、physics
+        # 那批 extension 的同步加载），再碰 mrs_arena.embodiments —— 顺序反了更容易触发
+        # 上面那个 C++ 层提前退出。
+        import isaaclab.sim  # noqa: F401
+        import isaaclab.envs  # noqa: F401
+        print("  ✓ isaaclab.sim/envs warmed up", flush=True)
+
         from mrs_arena.embodiments.openflex_navigation import OpenFlexNavigationEmbodiment
         from mrs_arena.environments.openflex_navigation import make_openflex_navigation_environment
         from mrs_arena.tasks.openflex_navigation_task import OpenFlexNavigationTask
         from mrs_arena.tasks.navigation_logic import navigation_parameters_from_task
+        print("  ✓ mrs_arena imported", flush=True)
+
+        import torch
+        from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+        from rsl_rl.runners import OnPolicyRunner
+        print("  ✓ torch + rsl_rl imported", flush=True)
+
+        from mrs_robot_lab.environments.learning.navigation_evaluation import aggregate_episode_results
         from mrs_robot_lab.environments.learning.configuration import load_task_configuration
         from mrs_arena.learning.arena_navigation_evaluator import (
             run_arena_navigation_episode,
             make_arena_policy_wrapper,
         )
+        print("  ✓ evaluation helpers imported", flush=True)
 
         # 验证 Arena 注册
         if AssetRegistry().get_asset_by_name(OpenFlexNavigationEmbodiment.name) is not OpenFlexNavigationEmbodiment:
@@ -140,7 +200,7 @@ def main(argv: list[str] | None = None) -> None:
         if TaskRegistry().get_task_by_name(OpenFlexNavigationTask.__name__) is not OpenFlexNavigationTask:
             raise RuntimeError("OpenFlexNavigationTask was not registered with Arena")
 
-        print("  ✓ Arena registrations validated")
+        print("  ✓ Arena registrations validated", flush=True)
 
         # 构建 Arena 环境
         print("\nBuilding Arena navigation environment...")
@@ -158,7 +218,9 @@ def main(argv: list[str] | None = None) -> None:
                 device=args.device,
             ),
         )
+        print("  ... calling ArenaEnvBuilder.make_registered()", flush=True)
         environment = builder.make_registered()
+        print("  ... make_registered returned", flush=True)
         print(f"  ✓ Environment built (num_envs=1, device={args.device})")
 
         # 加载任务配置以获取目标位置
@@ -170,21 +232,28 @@ def main(argv: list[str] | None = None) -> None:
         nav_params = navigation_parameters_from_task(runtime_config.task)
         target_xy = tuple(nav_params["target_position"][:2])
         target_yaw_rad = float(nav_params["target_yaw_rad"])
-        print(f"  ✓ Navigation target: xy={target_xy}, yaw={target_yaw_rad:.3f} rad")
+        print(f"  ✓ Navigation target: xy={target_xy}, yaw={target_yaw_rad:.3f} rad", flush=True)
 
         # 加载 RSL-RL 检查点
-        print("\nLoading RSL-RL checkpoint...")
+        print("\nLoading RSL-RL checkpoint...", flush=True)
+        print("  ... wrapping env for rsl_rl", flush=True)
         wrapped_env = RslRlVecEnvWrapper(environment, clip_actions=1.0)
+        print("  ... wrapper ok", flush=True)
         runner = OnPolicyRunner(
             wrapped_env,
             manifest["runner_config"],
             log_dir=None,
             device=args.device,
         )
+        print("  ... runner.load(checkpoint)", flush=True)
         runner.load(str(checkpoint_path), map_location=args.device)
-        rsl_policy = runner.get_inference_policy(device=environment.device)
+        print("  ... checkpoint loaded", flush=True)
+        # Arena 的 env 是 gym 的 OrderEnforcing 包装，没有 .device；用 rsl_rl 包装器
+        # 暴露的 device（或命令行 device）——原来这里 AttributeError 直接把评估打断。
+        policy_device = getattr(wrapped_env, "device", None) or getattr(environment, "device", None) or args.device
+        rsl_policy = runner.get_inference_policy(device=policy_device)
         arena_policy = make_arena_policy_wrapper(rsl_policy)
-        print(f"  ✓ Policy loaded and wrapped for Arena")
+        print(f"  ✓ Policy loaded and wrapped for Arena", flush=True)
 
         # 获取 asset_cfg（用于访问机器人）
         unwrapped = environment.unwrapped
