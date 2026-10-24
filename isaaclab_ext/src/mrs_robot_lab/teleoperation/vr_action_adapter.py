@@ -42,8 +42,9 @@ def normalize_bilateral_arm_targets(
     夹爪极性（按代码实际语义，勿再按旧注释理解）：扳机值超过行程中点时给 ``+1``，
     ``BinaryJointPositionAction`` 把非负值判为 **open**（→ ``open_command_expr`` 的
     0.044）；低于中点给 ``-1``，判为 **close**（→ 0.0）。即「捏到底 = 张开」。
-    若真机是「捏到底 = 闭合」，需要在 ``_normalize_one_arm`` 的 index==7 取反，
-    并同步改这里与 ``openflex_actions`` 的 open/close 绑定——三处必须一起动。
+    **已与真机确认（2026-10-24）**：真机同样是「扳机捏到底 = 张开」，当前映射正确，
+    不要为了"直觉"把它取反。若将来真机改向，需三处同改：``_normalize_one_arm``
+    的 index==7、本 docstring、``openflex_actions`` 的 open/close 绑定。
     """
 
     limits = _checked_limits(joint_limits, 16)
