@@ -11,8 +11,11 @@ import time
 from typing import Any
 
 _ROS2_BRIDGE_EXTENSION = "isaacsim.ros2.bridge"
+# supportMultiTickRate=true 与其余 6 处已实测链路一致（ROS app / scenario / standalone）。
+# 置 false 会退回 5.x 逐帧渲染，把 RTX 传感器从各自 tickRate 压成每帧出帧；
+# 对 OmniLidar 更会触发「tickRate != scanRateBaseHz 时静默出部分扫描」。
 _SENSOR_KIT_ARGS = (
-    "--/rtx/hydra/supportMultiTickRate=false",
+    "--/rtx/hydra/supportMultiTickRate=true",
     "--/renderer/raytracingMotion/enabled=true",
     "--/renderer/multiGpu/enabled=false",
     "--/exts/omni.replicator.srtx/enabled=false",

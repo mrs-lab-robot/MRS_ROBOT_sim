@@ -22,7 +22,20 @@ from mrs_robot_lab.contracts import ContractError, load_embodiment_contract
 from mrs_robot_lab.sensors.camera_cfg import build_camera_cfgs
 
 
-_OPENFLEX_CAMERA_CFGS = build_camera_cfgs()
+# 相机配置**懒加载**：原来这里是模块级 `_OPENFLEX_CAMERA_CFGS = build_camera_cfgs()`，
+# import 本模块就会读挂点 YAML + 标定、构造 4 个 CameraCfg —— 任何一个文件缺失/解析
+# 失败都会让 import 直接炸（实测会让 Kit 启动阶段的 import 链提前退出），也无法按
+# run 改传感器集合（采集只要 2 路时也只能吃这 4 路）。改成首次访问时构造并缓存。
+_CAMERA_CFG_CACHE: dict[str, CameraCfg] | None = None
+
+
+def _openflex_camera_cfgs() -> dict[str, CameraCfg]:
+    """按运行期挂点契约构建 4 路相机配置（首次调用时读 YAML，之后走缓存）。"""
+
+    global _CAMERA_CFG_CACHE
+    if _CAMERA_CFG_CACHE is None:
+        _CAMERA_CFG_CACHE = build_camera_cfgs()
+    return _CAMERA_CFG_CACHE
 
 
 @configclass
@@ -43,10 +56,16 @@ class OpenFlexEventCfg:
 class OpenFlexCameraCfg(ArenaCameraCfg):
     """Four RGB/depth cameras sourced from the canonical runtime mount contract."""
 
-    base_d435: CameraCfg = _OPENFLEX_CAMERA_CFGS["base_d435"]
-    head_d435: CameraCfg = _OPENFLEX_CAMERA_CFGS["head_d435"]
-    left_wrist_d405: CameraCfg = _OPENFLEX_CAMERA_CFGS["left_wrist_d405"]
-    right_wrist_d405: CameraCfg = _OPENFLEX_CAMERA_CFGS["right_wrist_d405"]
+    # 字段默认值留 None，实际配置在 __post_init__ 里懒加载填进来。
+    base_d435: CameraCfg | None = None
+    head_d435: CameraCfg | None = None
+    left_wrist_d405: CameraCfg | None = None
+    right_wrist_d405: CameraCfg | None = None
+
+    def __post_init__(self) -> None:
+        cfgs = _openflex_camera_cfgs()
+        for name in ("base_d435", "head_d435", "left_wrist_d405", "right_wrist_d405"):
+            setattr(self, name, cfgs[name])
 
 
 @register_asset

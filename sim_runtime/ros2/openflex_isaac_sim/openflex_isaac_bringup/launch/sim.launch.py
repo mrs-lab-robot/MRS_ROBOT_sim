@@ -81,6 +81,16 @@ def _isaac_sim_process_environment(install: Path, interpreter: Path) -> dict[str
     }
 
 
+def _is_sim_repository_root(candidate: Path) -> bool:
+    """Identify the MRS_ROBOT_sim checkout by its canonical runtime layout.
+
+    The repository used to expose an ``isaac_sim_core`` compatibility symlink
+    at the top level; the canonical marker is now the ``sim_runtime`` tree
+    itself, so detection never depends on the removed alias.
+    """
+    return (candidate / "sim_runtime" / "config" / "sensors").is_dir()
+
+
 def _default_sensor_asset_dir() -> Path:
     configured = os.environ.get("ISAACSIM_ROBOT_ROOT", "").strip()
     if not configured:
@@ -89,11 +99,11 @@ def _default_sensor_asset_dir() -> Path:
         return Path(configured).expanduser()
     cwd = Path.cwd().resolve()
     for candidate in (cwd, *cwd.parents):
-        if (candidate / "isaac_sim_core").is_dir():
+        if _is_sim_repository_root(candidate):
             return candidate
     for parent in Path(__file__).resolve().parents:
         for candidate in (parent, parent / "MRS_ROBOT_sim", parent / "isaacsim_robot"):
-            if (candidate / "isaac_sim_core").is_dir():
+            if _is_sim_repository_root(candidate):
                 return candidate
     raise RuntimeError(
         "Isaac Sim asset root was not found. Launch from the MRS_ROBOT_sim "
@@ -135,7 +145,7 @@ def _default_generated_urdf() -> Path:
     # user's home directory may be read-only, while still allowing callers to
     # override the location with ISAACSIM_ROBOT_GENERATED_DIR.
     for parent in Path(__file__).resolve().parents:
-        if (parent / "isaac_sim_core").is_dir():
+        if _is_sim_repository_root(parent):
             return parent / "reports" / "runtime" / "generated" / "robot_control_only.urdf"
         if (parent / "src" / "openflex_isaac_sim").is_dir():
             return parent / "reports" / "runtime" / "generated" / "robot_control_only.urdf"
@@ -159,7 +169,6 @@ def _default_robot_usd() -> Path:
         for candidate in (
             parent / "sim_runtime" / "assets" / "robots" / "openflex_robot.usda",
             parent / "assets" / "robots" / "openflex_robot.usda",
-            parent / "isaac_sim_core" / "assets" / "robots" / "openflex_robot.usda",
         ):
             if candidate.is_file():
                 return candidate

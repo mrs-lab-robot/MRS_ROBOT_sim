@@ -39,7 +39,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
     "--stage",
     type=Path,
-    default=ROOT / "isaac_sim_core" / "assets" / "environments" / "robot_camera_lidar_stage.usda",
+    default=ROOT / "sim_runtime" / "assets" / "environments" / "robot_camera_lidar_stage.usda",
 )
 parser.add_argument("--robot-prim", default="/World/OpenFlex")
 parser.add_argument("--snapshot-host", default="127.0.0.1")

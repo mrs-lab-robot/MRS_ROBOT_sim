@@ -58,9 +58,9 @@ unset ISAAC_PATH EXP_PATH CARB_APP_PATH
 # 脚本原样继承该设置，不覆盖用户已给出的明确值。
 
 if [[ -z "${MRS_ROBOT_SIM_ROOT:-}" ]]; then
-    if [[ -d "${repo_root}/../isaac_sim_core" ]]; then
+    if [[ -d "${repo_root}/../sim_runtime" ]]; then
         sim_root="${repo_root}/.."
-    elif [[ -d "${repo_root}/../MRS_ROBOT_sim/isaac_sim_core" ]]; then
+    elif [[ -d "${repo_root}/../MRS_ROBOT_sim/sim_runtime" ]]; then
         sim_root="${repo_root}/../MRS_ROBOT_sim"
     else
         echo "MRS_ROBOT_sim root not found; set MRS_ROBOT_SIM_ROOT explicitly." >&2

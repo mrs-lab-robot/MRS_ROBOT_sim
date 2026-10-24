@@ -15,11 +15,11 @@ The full desktop workflow additionally requires the separately deployed companio
 
 ## Checks
 
-Simulator-independent tests:
+Simulator-independent tests (run from the repository root; the suite lives in the single
+`tests/` tree — see [`../tests/README.md`](../tests/README.md)):
 
 ```bash
-PYTHONPATH=src:../sim_runtime/teleoperation/src \
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests -q
+pytest tests/unit/lab -q
 ```
 
 Scripts that initialize Kit or create a simulation require the pinned Isaac runtime and a suitable GPU/driver. Their execution is not covered by the unit test command above. Episode persistence also requires the package dependencies declared in this project.

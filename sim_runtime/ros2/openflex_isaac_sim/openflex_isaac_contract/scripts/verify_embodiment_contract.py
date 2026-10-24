@@ -30,7 +30,8 @@ def default_bringup_config_dir() -> Path:
     for repo_dir in (Path.cwd(), source_repo_root()):
         config_dir = (
             repo_dir
-            / "ros2_pkgs"
+            / "sim_runtime"
+            / "ros2"
             / "openflex_isaac_sim"
             / "openflex_isaac_bringup"
             / "config"
@@ -39,7 +40,8 @@ def default_bringup_config_dir() -> Path:
             return config_dir
     return (
         source_repo_root()
-        / "ros2_pkgs"
+        / "sim_runtime"
+        / "ros2"
         / "openflex_isaac_sim"
         / "openflex_isaac_bringup"
         / "config"
@@ -59,9 +61,9 @@ def default_sensor_config_path() -> Path:
         pass
     return (
         source_repo_root()
-        / "isaac_sim_core"
+        / "sim_runtime"
         / "config"
-        / "sensor_params"
+        / "sensors"
         / "sensors.isaac.yaml"
     )
 

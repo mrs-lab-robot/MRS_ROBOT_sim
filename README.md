@@ -10,8 +10,7 @@
 - `isaaclab_ext/`：Isaac Lab 适配和仿真侧工具。
 - `arena_benchmark/`：Arena 环境、任务和评估工具。
 - `third_party/IsaacLab-Arena/`：锁定版本的上游子模块；不要直接修改其内容。
-- `tests/`：单元与集成测试。GPU/Kit 验收与不启动模拟器的测试是不同范围。
-- `test/`：额外的 ROS/运行时/性能检查；运行条件取决于具体测试。性能探针为可选工具，不构成稳定验收协议。
+- `tests/`：唯一的测试根，内部按 `unit/` `integration/` `smoke/` 分层。测试地图与运行方式见 [`tests/README.md`](tests/README.md)。
 
 为兼容现有代码，运行时内部包名和资产标识暂时保留；它们不构成稳定的公共 API。
 

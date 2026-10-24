@@ -23,7 +23,6 @@ coverage.xml
 
 # Generated simulation assets and local backups
 sim_runtime/assets/generated/
-isaac_sim_core/assets/generated/
 *.usd.bak
 *.usda.bak
 

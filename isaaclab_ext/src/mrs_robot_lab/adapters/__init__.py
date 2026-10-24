@@ -1,11 +1,5 @@
-"""Adapters from external teleoperation commands to Isaac Lab actions."""
+"""Adapters from external teleoperation commands to Isaac Lab actions.
 
-from mrs_robot_lab.adapters.dual_arm_mimic_adapter import (
-    DualArmBoxTransportMimicEnvCfg,
-    get_dual_arm_box_transport_mimic_cfg,
-)
-
-__all__ = [
-    "DualArmBoxTransportMimicEnvCfg",
-    "get_dual_arm_box_transport_mimic_cfg",
-]
+Mimic 数据生成配置已迁到 benchmark 层（tests/migration 的分层规则要求：
+本层不得引用上层）。这里不再 re-export。
+"""

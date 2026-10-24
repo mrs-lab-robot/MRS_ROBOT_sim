@@ -26,8 +26,8 @@ if str(SENSOR_PACKAGE) not in sys.path:
     sys.path.insert(0, str(SENSOR_PACKAGE))
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--stage", type=Path, default=ROOT / "isaac_sim_core" / "assets" / "environments" / "robot_control_stage.usda")
-parser.add_argument("--sensor-config-root", type=Path, default=ROOT / "isaac_sim_core" / "config" / "sensor_params" / "realsense")
+parser.add_argument("--stage", type=Path, default=ROOT / "sim_runtime" / "assets" / "environments" / "robot_control_stage.usda")
+parser.add_argument("--sensor-config-root", type=Path, default=ROOT / "sim_runtime" / "config" / "sensors" / "realsense")
 parser.add_argument("--robot-prim", default="/World/OpenFlex")
 parser.add_argument("--snapshot-host", default="127.0.0.1")
 parser.add_argument("--snapshot-port", type=int, default=24101)

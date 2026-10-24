@@ -88,14 +88,14 @@ def load_realsense_config(sensor_asset_dir: Path) -> dict[str, Any]:
     """Load only the RealSense contract.
 
     The branch-specific snapshot may place config under ``realsense/config``;
-    the transition tree keeps the ROS package layout for compatibility.
+    the canonical tree keeps the sensor contract under
+    ``sim_runtime/config/sensors/realsense``.
     """
     path = _first_existing(
         sensor_asset_dir,
         "realsense/config/realsense_robot_mounts.yaml",
         "config/realsense_robot_mounts.yaml",
-        "isaac_sim_core/config/sensor_params/realsense/realsense_robot_mounts.yaml",
-        "ros2_pkgs/openflex_isaac_sim/openflex_isaac_sensors/config/realsense_robot_mounts.yaml",
+        "sim_runtime/config/sensors/realsense/realsense_robot_mounts.yaml",
     )
     root = Path(sensor_asset_dir).expanduser()
     return attach_realsense_calibrations(
@@ -104,8 +104,7 @@ def load_realsense_config(sensor_asset_dir: Path) -> dict[str, Any]:
         root / "realsense" / "calibration",
         root / "realsense" / "config" / "calibration",
         root / "config" / "calibration",
-        root / "isaac_sim_core" / "config" / "sensor_params" / "realsense" / "calibration",
-        root / "ros2_pkgs" / "openflex_isaac_sim" / "openflex_isaac_sensors" / "config" / "calibration",
+        root / "sim_runtime" / "config" / "sensors" / "realsense" / "calibration",
     )
 
 
@@ -114,7 +113,7 @@ def load_mid360_config(sensor_asset_dir: Path) -> dict[str, Any]:
     path = _first_existing(
         sensor_asset_dir,
         "mid360/config/mid360_robot_mount.yaml",
-        "isaac_sim_core/config/sensor_params/mid360/mid360_robot_mount.yaml",
+        "sim_runtime/config/sensors/mid360/mid360_robot_mount.yaml",
     )
     return _read_yaml(path)
 

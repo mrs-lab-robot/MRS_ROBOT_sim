@@ -72,7 +72,7 @@ def main() -> int:
         "asset",
         type=Path,
         nargs="?",
-        default=repo_root / "isaac_sim_core" / "assets" / "robots" / "openflex_robot.usda",
+        default=repo_root / "sim_runtime" / "assets" / "robots" / "openflex_robot.usda",
     )
     args = parser.parse_args()
 

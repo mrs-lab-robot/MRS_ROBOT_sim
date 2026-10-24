@@ -66,7 +66,7 @@ def _sensor_python_paths() -> list[str]:
     for root in roots:
         paths.extend(
             (
-                str(root / "ros2_pkgs" / "openflex_isaac_sim" / "openflex_isaac_sensors"),
+                str(root / "sim_runtime" / "ros2" / "openflex_isaac_sim" / "openflex_isaac_sensors"),
                 str(root / "openflex_isaac_sensors"),
                 str(root / "ros2" / "openflex_isaac_sensors"),
             )
@@ -397,7 +397,7 @@ def _sensor_asset_root() -> Path:
     Component 5 passes this explicitly because Isaac Sim runs in its own
     Python environment and cannot reliably discover the colcon source tree.
     The workspace root is also accepted for the in-repository layout, where
-    MID360 configuration lives under ``isaac_sim_core/config``.
+    MID360 configuration lives under ``sim_runtime/config/sensors``.
     """
     configured = (
         os.environ.get("OPENFLEX_ISAAC_MID360_ASSET_DIR", "").strip()
@@ -411,7 +411,14 @@ def _sensor_asset_root() -> Path:
     for candidate in candidates:
         if (
             (candidate / "mid360" / "config" / "mid360_robot_mount.yaml").is_file()
-            or (candidate / "isaac_sim_core" / "config" / "sensor_params" / "mid360" / "mid360_robot_mount.yaml").is_file()
+            or (
+                candidate
+                / "sim_runtime"
+                / "config"
+                / "sensors"
+                / "mid360"
+                / "mid360_robot_mount.yaml"
+            ).is_file()
         ):
             return candidate
     raise RuntimeError(
