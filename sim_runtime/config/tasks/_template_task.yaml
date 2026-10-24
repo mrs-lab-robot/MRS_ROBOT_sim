@@ -1,0 +1,40 @@
+# 新任务模板：复制本文件为 <task_id>.yaml 再改。
+# 规矩见 docs/task-authoring.md —— 这里出现的每个数值都必须被任务类读取，
+# 不许在 Python 里再写一份。
+spec_version: "1.0"
+task_id: replace_me
+description: One-line description of what the robot must achieve.
+scene_id: replace_me_scene
+episode_length_s: 60.0
+
+# 成功判据：criterion_type 对应判据函数，params 是阈值（判据函数只吃这些参数）
+success_criteria:
+  - criterion_type: replace_me_criterion
+    params:
+      object_id: replace_me_object
+      target_position: [0.0, 0.0, 0.0]   # 目标位置，任务类必须读这里
+      stable_seconds: 1.0
+    tolerance: 0.05
+    required: true
+
+# 初始位姿：物体用 <id>_pose 命名，任务类通过 object_placement_from_spec 读取
+initial_state:
+  robot_pose:
+    position: [0.0, 0.0, 0.0]
+    yaw_rad: 0.0
+  replace_me_object_pose:
+    position: [0.0, 0.0, 0.0]
+    rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+# 随机化幅度：任务类通过 randomization_from_spec 读取，0 表示不随机
+randomization_config:
+  box_xy_m: 0.0
+  box_yaw_rad: 0.0
+
+supported_backends: [isaac_lab, arena]
+capabilities: [capture, replay, rl, evaluation]
+required_sensors: [base_camera, head_camera, left_wrist_camera, right_wrist_camera, joint_state, object_state]
+allowed_teleop_modes: [vr, keyboard]
+maturity: draft
+metadata:
+  readiness: draft_template

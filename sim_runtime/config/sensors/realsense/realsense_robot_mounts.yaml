@@ -4,10 +4,13 @@ render_profiles:
   # 三档都保持各自宽高比，避免纵向 FOV 变化。
   default: low
   low:
-    base_d435: [320, 180]
+    # 统一 320x240（4:3）。注意 base 的硬件 raw 是 320x240、launch 是 424x240(16:9)，
+    # 用 320x240 会让 base 的纵向 FOV 比 high 档略大；只作低配/预览与省显存用，
+    # 正式采数据请用 high。
+    base_d435: [320, 240]
     head_d435: [320, 240]
-    left_wrist_d405: [320, 180]
-    right_wrist_d405: [320, 180]
+    left_wrist_d405: [320, 240]
+    right_wrist_d405: [320, 240]
   mid:
     base_d435: [424, 240]
     head_d435: [480, 360]

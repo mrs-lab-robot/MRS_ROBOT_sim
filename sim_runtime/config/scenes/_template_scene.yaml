@@ -1,0 +1,14 @@
+# 新场景模板：复制为 <scene_id>.yaml 再改。
+# 物体的位置/朝向/随机化都写在这里，任务类不许再写一份。
+spec_version: "1.0"
+scene_id: replace_me_scene
+description: One-line description of the scene.
+base_stage_usd: ../../ros2/openflex_isaac_sim/openflex_isaac_bringup/config/empty_stage.usd
+robot_spawn_pose:
+  position: [0.0, 0.0, 0.0]
+  rotation: [0.0, 0.0, 0.0, 1.0]
+objects: []
+lighting:
+  randomization_supported: false
+metadata:
+  readiness: draft_template
