@@ -902,6 +902,7 @@ def export_prepared_episode_to_lerobot(
     *,
     fps: int,
     task: str,
+    state_dim: int | None = None,
 ) -> Path:
     """Write an extracted episode without requiring HDF5 in the LeRobot Python environment."""
     import numpy as np
@@ -915,8 +916,17 @@ def export_prepared_episode_to_lerobot(
         frame_count = int(manifest["frame_count"])
         staged_fps = int(manifest["fps"])
         staged_task = str(manifest["task"])
+        state_names = tuple(
+            str(name) for name in manifest.get("state_names", LEROBOT_STATE_NAMES)
+        )
+        staged_state_dim = int(manifest.get("state_dim", len(state_names)))
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise ValueError(f"invalid Arena LeRobot staging manifest: {error}") from error
+    if staged_state_dim not in (19, 25) or len(state_names) != staged_state_dim:
+        raise ValueError("prepared observation.state must use the 19D or 25D OpenFlex schema")
+    if state_dim is not None and int(state_dim) != staged_state_dim:
+        raise ValueError("LeRobot schema does not match the prepared episode")
+    state_dim = staged_state_dim
     if manifest.get("format") not in {_CURRENT_STAGING_FORMAT, *_LEGACY_STAGING_FORMATS}:
         raise ValueError("unsupported MRS Robot LeRobot staging format")
     if staged_fps != int(fps) or staged_task != str(task).strip():
