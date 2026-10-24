@@ -24,10 +24,10 @@ class CameraInterfaceConfigTest(unittest.TestCase):
         self.assertEqual(
             {mount.name: (mount.width, mount.height) for mount in mounts},
             {
-                "base_d435": (320, 180),
+                "base_d435": (320, 240),
                 "head_d435": (320, 240),
-                "left_wrist_d405": (320, 180),
-                "right_wrist_d405": (320, 180),
+                "left_wrist_d405": (320, 240),
+                "right_wrist_d405": (320, 240),
             },
         )
         self.assertEqual(mounts[0].optical_frame, "d435_color_optical_frame")
