@@ -1,3 +1,24 @@
+render_profiles:
+  # 渲染分辨率档位（只影响 IsaacLab TiledCamera 的 render product）。
+  # width/height 仍是硬件契约尺寸，ROS 话题必须与真机一致。
+  # 三档都保持各自宽高比，避免纵向 FOV 变化。
+  default: low
+  low:
+    base_d435: [320, 180]
+    head_d435: [320, 240]
+    left_wrist_d405: [320, 180]
+    right_wrist_d405: [320, 180]
+  mid:
+    base_d435: [424, 240]
+    head_d435: [480, 360]
+    left_wrist_d405: [480, 270]
+    right_wrist_d405: [480, 270]
+  high:
+    base_d435: [424, 240]
+    head_d435: [640, 480]
+    left_wrist_d405: [480, 270]
+    right_wrist_d405: [480, 270]
+
 schema_version: 1
 
 runtime:

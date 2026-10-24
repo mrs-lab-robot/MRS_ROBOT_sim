@@ -51,7 +51,10 @@ class TeleopEpisodeRecorder:
     def start(self) -> None:
         if self.state is EpisodeState.RECORDING:
             raise RuntimeError("an episode is already recording")
-        self._samples.clear()
+        # 复用 discard() 的清理：相机帧、上一集的单调性游标、mimic 标签都要清，
+        # 否则直接 start() 的路径会把上一集的状态带进来（游标残留会让第一条 append
+        # 抛 "sim_time_ns must be monotonic increasing"）。
+        self.discard()
         self.state = EpisodeState.RECORDING
 
     def append(

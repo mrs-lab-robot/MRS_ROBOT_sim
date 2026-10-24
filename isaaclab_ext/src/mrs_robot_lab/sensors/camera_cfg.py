@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -41,11 +42,38 @@ class CameraMount:
     calibration_id: str | None = None
 
 
+_PROFILE_ENV = "OPENFLEX_CAMERA_PROFILE"
+
+
+def resolve_render_profile(
+    document: Mapping[str, Any], requested: str | None = None
+) -> str | None:
+    """确定这次用哪一档渲染分辨率。
+
+    优先级：显式参数 > 环境变量 OPENFLEX_CAMERA_PROFILE > yaml 的 render_profiles.default。
+    GUI 通过命令行 --camera-profile 传入，仿真入口把它落到这个环境变量。
+    """
+
+    profiles = document.get("render_profiles") or {}
+    if not isinstance(profiles, Mapping):
+        return None
+    available = {name for name in profiles if name != "default"}
+    choice = requested or os.environ.get(_PROFILE_ENV) or profiles.get("default")
+    if choice is None:
+        return None
+    if choice not in available:
+        raise ValueError(
+            f"unknown camera render profile {choice!r}; available: {sorted(available)}"
+        )
+    return str(choice)
+
+
 def load_camera_mounts(
     resolver: AssetResolver | None = None,
     *,
     robot_prim_path: str = _ENV_ROBOT_PRIM,
     sensor_frequencies_hz: Mapping[str, float] | None = None,
+    render_profile: str | None = None,
 ) -> tuple[CameraMount, ...]:
     """Read runtime camera mounts, optionally selecting capture IDs and rates.
 
@@ -81,6 +109,8 @@ def load_camera_mounts(
     cameras = document.get("cameras")
     if not isinstance(cameras, dict):
         raise ValueError(f"camera mount config has no cameras mapping: {path}")
+    profile = resolve_render_profile(document, render_profile)
+    profile_sizes = (document.get("render_profiles") or {}).get(profile, {}) if profile else {}
 
     mounts: list[CameraMount] = []
     for name, value in cameras.items():
@@ -108,12 +138,19 @@ def load_camera_mounts(
         # tests/unit/legacy_ros/test_robot_camera_resolution_matches_hardware.py）；
         # render_width/render_height 是渲染分辨率（性能旋钮），只影响 IsaacLab 的
         # TiledCamera render product，不影响对外发布的图像尺寸。
-        width = _positive_integer(
-            value.get("render_width", value.get("width")), f"{name}.render_width"
-        )
-        height = _positive_integer(
-            value.get("render_height", value.get("height")), f"{name}.render_height"
-        )
+        profile_size = profile_sizes.get(name) if isinstance(profile_sizes, Mapping) else None
+        if profile_size is not None:
+            if not isinstance(profile_size, (list, tuple)) or len(profile_size) != 2:
+                raise ValueError(f"{name} render profile entry must be [width, height]")
+            width = _positive_integer(profile_size[0], f"{name}.render_profile.width")
+            height = _positive_integer(profile_size[1], f"{name}.render_profile.height")
+        else:
+            width = _positive_integer(
+                value.get("render_width", value.get("width")), f"{name}.render_width"
+            )
+            height = _positive_integer(
+                value.get("render_height", value.get("height")), f"{name}.render_height"
+            )
         rate = _positive_number(value.get("tick_rate_hz"), f"{name}.tick_rate_hz")
         focal = _positive_number(value.get("focal_length_mm"), f"{name}.focal_length_mm")
         near = _positive_number(value.get("near_m"), f"{name}.near_m")
@@ -161,6 +198,7 @@ def build_camera_cfgs(
     *,
     robot_prim_path: str = _ENV_ROBOT_PRIM,
     sensor_frequencies_hz: Mapping[str, float] | None = None,
+    render_profile: str | None = None,
 ) -> dict[str, Any]:
     """Build Isaac Lab wrappers on existing robot camera mounts."""
 
@@ -177,6 +215,7 @@ def build_camera_cfgs(
         resource_resolver,
         robot_prim_path=robot_prim_path,
         sensor_frequencies_hz=sensor_frequencies_hz,
+        render_profile=render_profile,
     ):
         spawn_kwargs: dict[str, Any] = {
             "focal_length": mount.focal_length_mm,

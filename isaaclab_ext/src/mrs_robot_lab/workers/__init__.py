@@ -552,11 +552,11 @@ class _IsaacLabRuntime:
         applied_target = [0.0] * ACTION_DIMENSION
 
         if config.task_id == "navigation_to_goal":
+            # 底盘指令只认 kind == "base_twist"；estop 是独立的 kind，不该用 active
+            # 字段去否决底盘指令（原来带 active=True 的 base_twist 会被静默换成 0）。
             requested = (
                 command.get("values")
-                if isinstance(command, dict)
-                and command.get("kind") == "base_twist"
-                and not bool(command.get("active", False))
+                if isinstance(command, dict) and command.get("kind") == "base_twist"
                 else (0.0, 0.0, 0.0)
             )
             if not isinstance(requested, (list, tuple)):
@@ -1409,14 +1409,17 @@ class IsaacLabWorker:
                         issues.append(f"{array_name} 含有非有限数值")
 
                 cameras = dataset.get("camera_frames")
-                if cameras is None or not len(cameras):
+                # 只有本次会话真的启用了相机，才要求 HDF5 里有相机帧。
+                # 原来无条件要求：无相机采集（state-only / 8G 机器降级跑）必然被判失败进
+                # quarantine，明明数值数据是好的。
+                enabled_camera_ids = {
+                    sensor.sensor_id
+                    for sensor in self._config.sensors
+                    if sensor.enabled and sensor.sensor_type.lower() == "camera"
+                }
+                if enabled_camera_ids and (cameras is None or not len(cameras)):
                     issues.append("相机帧缺失")
-                else:
-                    enabled_camera_ids = {
-                        sensor.sensor_id
-                        for sensor in self._config.sensors
-                        if sensor.enabled and sensor.sensor_type.lower() == "camera"
-                    }
+                elif cameras is not None and len(cameras):
                     unknown_camera_ids = sorted(
                         enabled_camera_ids - set(_CAMERA_SENSOR_STREAMS)
                     )

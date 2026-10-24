@@ -241,6 +241,16 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=None, help="Deterministic reset/policy seed")
     parser.add_argument("--episodes", type=int, default=1, help="Target number of episodes for this session")
     parser.add_argument("--session-metadata", default="", help="Write session provenance JSON to this path")
+    parser.add_argument(
+        "--camera-profile",
+        choices=("low", "mid", "high"),
+        default=None,
+        help=(
+            "相机渲染分辨率档位（low=本机 8G 用，mid/high=大显存机采数据用）。"
+            "不传则用 realsense_robot_mounts.yaml 里的 render_profiles.default；"
+            "只影响 TiledCamera 的渲染分辨率，不改变 ROS 话题的硬件契约尺寸。"
+        ),
+    )
     parser.add_argument("--camera-stream-port", type=int, default=24104)
     parser.add_argument("--camera-register-port", type=int, default=24106)
     parser.add_argument("--camera-chunk-size", type=int, default=_CAMERA_CHUNK_SIZE_DEFAULT)
@@ -303,6 +313,11 @@ def main() -> None:
         parser.error("--physics-hz must be between 1 and 500")
     if not 1 <= args.render_hz <= min(120, args.physics_hz):
         parser.error("--render-hz must be between 1 and min(120, physics-hz)")
+    if args.camera_profile:
+        # 相机配置在 arena embodiment 里是懒加载构建的，那里拿不到 argparse，
+        # 所以在这里落到环境变量，由 camera_cfg.resolve_render_profile 读取。
+        os.environ["OPENFLEX_CAMERA_PROFILE"] = args.camera_profile
+
     if not 1 <= args.camera_stream_port <= 65535:
         parser.error("--camera-stream-port must be between 1 and 65535")
     if not 1 <= args.camera_register_port <= 65535:
@@ -495,6 +510,9 @@ def main() -> None:
             "randomization": args.reset_randomization,
             "episodes": args.episodes,
             "enable_cameras": bool(args.enable_cameras),
+            "camera_render_profile": args.camera_profile
+            or os.environ.get("OPENFLEX_CAMERA_PROFILE")
+            or "default",
             "record_image_hz": float(args.record_image_hz),
             "physics_hz": int(args.physics_hz),
             "render_hz": int(args.render_hz),

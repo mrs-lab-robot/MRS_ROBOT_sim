@@ -304,7 +304,12 @@ class ManagedLivoxRelay:
             except subprocess.TimeoutExpired:
                 # This is the exact child created and owned by this instance.
                 self._process.kill()
-                self._process.wait(timeout=1.0)
+                try:
+                    self._process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    # 清理路径不该抛异常（会盖住真正的退出原因）；SIGKILL 已发出，
+                    # 剩下的是内核回收，记一条 warning 就够。
+                    print("warning: livox relay 未在 1s 内退出（SIGKILL 已发出）", file=sys.stderr)
         self._reader.join(timeout=1.0)
 
 
