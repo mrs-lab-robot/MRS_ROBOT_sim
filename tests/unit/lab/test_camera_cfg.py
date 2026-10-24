@@ -18,13 +18,16 @@ class CameraInterfaceConfigTest(unittest.TestCase):
             ("base_d435", "head_d435", "left_wrist_d405", "right_wrist_d405"),
         )
         self.assertTrue(all(mount.prim_path.startswith("/World/Robot/Geometry/") for mount in mounts))
+        # 这里的 width/height 是**渲染分辨率**（render_width/render_height），
+        # 不是硬件契约尺寸；硬件尺寸由 width/height 字段表达，另有测试守着与真机一致
+        # （tests/unit/legacy_ros/test_robot_camera_resolution_matches_hardware.py）。
         self.assertEqual(
             {mount.name: (mount.width, mount.height) for mount in mounts},
             {
-                "base_d435": (424, 240),
-                "head_d435": (640, 480),
-                "left_wrist_d405": (480, 270),
-                "right_wrist_d405": (480, 270),
+                "base_d435": (320, 180),
+                "head_d435": (320, 240),
+                "left_wrist_d405": (320, 180),
+                "right_wrist_d405": (320, 180),
             },
         )
         self.assertEqual(mounts[0].optical_frame, "d435_color_optical_frame")

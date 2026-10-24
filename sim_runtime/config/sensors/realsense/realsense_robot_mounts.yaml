@@ -24,6 +24,14 @@ cameras:
     tick_rate_hz: 30.0
     width: 424
     height: 240
+    # 渲染分辨率（只影响 IsaacLab TiledCamera 的 render product；
+    # ROS 话题仍按上面的硬件契约尺寸发布）
+    render_width: 320
+    render_height: 180
+    # 渲染分辨率（只影响 IsaacLab TiledCamera 的 render product；
+    # ROS 话题仍按上面的硬件契约尺寸发布）
+    render_width: 320
+    render_height: 180
     focal_length_mm: 3.2
     near_m: 0.05
     far_m: 10.0
@@ -47,6 +55,14 @@ cameras:
     tick_rate_hz: 30.0
     width: 640
     height: 480
+    # 渲染分辨率（只影响 IsaacLab TiledCamera 的 render product；
+    # ROS 话题仍按上面的硬件契约尺寸发布）
+    render_width: 320
+    render_height: 240
+    # 渲染分辨率（只影响 IsaacLab TiledCamera 的 render product；
+    # ROS 话题仍按上面的硬件契约尺寸发布）
+    render_width: 320
+    render_height: 240
     focal_length_mm: 3.2
     near_m: 0.05
     far_m: 10.0
@@ -68,6 +84,14 @@ cameras:
     tick_rate_hz: 30.0
     width: 480
     height: 270
+    # 渲染分辨率（只影响 IsaacLab TiledCamera 的 render product；
+    # ROS 话题仍按上面的硬件契约尺寸发布）
+    render_width: 320
+    render_height: 180
+    # 渲染分辨率（只影响 IsaacLab TiledCamera 的 render product；
+    # ROS 话题仍按上面的硬件契约尺寸发布）
+    render_width: 320
+    render_height: 180
     focal_length_mm: 3.2
     near_m: 0.03
     far_m: 3.0
@@ -89,6 +113,14 @@ cameras:
     tick_rate_hz: 30.0
     width: 480
     height: 270
+    # 渲染分辨率（只影响 IsaacLab TiledCamera 的 render product；
+    # ROS 话题仍按上面的硬件契约尺寸发布）
+    render_width: 320
+    render_height: 180
+    # 渲染分辨率（只影响 IsaacLab TiledCamera 的 render product；
+    # ROS 话题仍按上面的硬件契约尺寸发布）
+    render_width: 320
+    render_height: 180
     focal_length_mm: 3.2
     near_m: 0.03
     far_m: 3.0

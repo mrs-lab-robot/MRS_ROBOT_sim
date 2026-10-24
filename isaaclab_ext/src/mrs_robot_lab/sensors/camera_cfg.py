@@ -104,8 +104,16 @@ def load_camera_mounts(
         norm = math.sqrt(sum(component * component for component in quaternion))
         if not math.isclose(norm, 1.0, rel_tol=1e-4, abs_tol=1e-4):
             raise ValueError(f"camera {name} quaternion_wxyz must be normalized")
-        width = _positive_integer(value.get("width"), f"{name}.width")
-        height = _positive_integer(value.get("height"), f"{name}.height")
+        # width/height 是「硬件契约尺寸」（ROS 话题必须与真机一致，见
+        # tests/unit/legacy_ros/test_robot_camera_resolution_matches_hardware.py）；
+        # render_width/render_height 是渲染分辨率（性能旋钮），只影响 IsaacLab 的
+        # TiledCamera render product，不影响对外发布的图像尺寸。
+        width = _positive_integer(
+            value.get("render_width", value.get("width")), f"{name}.render_width"
+        )
+        height = _positive_integer(
+            value.get("render_height", value.get("height")), f"{name}.render_height"
+        )
         rate = _positive_number(value.get("tick_rate_hz"), f"{name}.tick_rate_hz")
         focal = _positive_number(value.get("focal_length_mm"), f"{name}.focal_length_mm")
         near = _positive_number(value.get("near_m"), f"{name}.near_m")
