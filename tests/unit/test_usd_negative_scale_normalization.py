@@ -96,21 +96,54 @@ class UsdNegativeScaleNormalizationTest(unittest.TestCase):
         self.assertEqual(len(right_counts), len(left_counts))
         self.assertEqual(sum(left_counts), sum(right_counts))
 
-    def test_mirrored_link1_has_authored_vertex_normals(self) -> None:
-        mesh = UsdGeom.Mesh(self.stage.GetPrimAtPath(LEFT_LINK1_VISUAL))
-        points = mesh.GetPointsAttr().Get() or []
-        normals = mesh.GetNormalsAttr().Get() or []
+    def test_mirrored_link1_has_consistent_face_varying_normals(self) -> None:
+        """镜像后的 link1 必须只有一套自洽的法线。
 
-        self.assertEqual(UsdGeom.Tokens.vertex, mesh.GetNormalsInterpolation())
+        资产约定是 `primvars:normals`（faceVarying 平面着色，棱角不被糊成平滑面），
+        不再写 built-in `normals`（vertex）。历史遗留的 built-in 那组是焊接前的旧数据
+        （2141 条 vs 2101 个顶点、索引错位），已删除；这里守住三条：
+        不再出现 built-in 法线、primvars 条数与面索引一致、每条单位长且与绕序同向。
+        """
+
+        import numpy as np
+
+        mesh = UsdGeom.Mesh(self.stage.GetPrimAtPath(LEFT_LINK1_VISUAL))
         self.assertEqual(
-            len(points),
-            len(normals),
-            "mirrored mesh must have stable vertex normals after scale baking",
+            [],
+            list(mesh.GetNormalsAttr().Get() or []),
+            "built-in vertex normals should be gone; asset uses primvars:normals (faceVarying)",
         )
+
+        primvar = UsdGeom.PrimvarsAPI(mesh).GetPrimvar("normals")
+        self.assertIsNotNone(primvar, "link1 must carry primvars:normals")
+        self.assertEqual(UsdGeom.Tokens.faceVarying, primvar.GetInterpolation())
+
+        normals = np.asarray(primvar.Get(), dtype=float)
+        indices = np.asarray(primvar.GetIndices() or [], dtype=int)
         self.assertGreater(len(normals), 0)
         self.assertTrue(
-            all(abs(normal.GetLength() - 1.0) < 1e-5 for normal in normals),
-            "authored vertex normals must be normalized",
+            np.allclose(np.linalg.norm(normals, axis=1), 1.0, atol=1e-5),
+            "primvars:normals must be unit length",
+        )
+
+        face_indices = np.asarray(mesh.GetFaceVertexIndicesAttr().Get(), dtype=int).reshape(-1, 3)
+        points = np.asarray(mesh.GetPointsAttr().Get(), dtype=float)
+        if len(indices):
+            per_corner = normals[indices].reshape(-1, 3, 3)
+        else:
+            self.assertEqual(len(normals), len(face_indices) * 3)
+            per_corner = normals.reshape(-1, 3, 3)
+        face_normals = per_corner.mean(axis=1)
+        face_normals /= np.linalg.norm(face_normals, axis=1, keepdims=True) + 1e-12
+
+        a, b, c = (points[face_indices[:, i]] for i in range(3))
+        geometric = np.cross(b - a, c - a)
+        geometric /= np.linalg.norm(geometric, axis=1, keepdims=True) + 1e-12
+        agreeing = int((np.einsum("ij,ij->i", geometric, face_normals) > 0).sum())
+        self.assertEqual(
+            len(face_indices),
+            agreeing,
+            f"primvars:normals must follow winding; only {agreeing}/{len(face_indices)} do",
         )
 
     def test_normalization_preserves_mesh_world_vertices_and_topology(self) -> None:
