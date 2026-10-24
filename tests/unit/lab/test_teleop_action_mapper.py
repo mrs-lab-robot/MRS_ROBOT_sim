@@ -12,6 +12,41 @@ from mrs_teleoperation.protocol import CommandFrame
 
 
 class TeleopActionMapperTest(unittest.TestCase):
+    def test_lift_velocity_alone_is_relative_to_current_lift_position(self) -> None:
+        """只有 lift_velocity 时不能崩，且必须是「当前升降位置 + 增量」。
+
+        历史 bug：该分支直接复用臂循环里的局部变量 current，只有 lift_velocity 时抛
+        UnboundLocalError；有臂指令时又把最后一个臂关节的位置当升降基准。
+        """
+
+        current = {
+            **{f"openarmx_left_joint{i}": 0.0 for i in range(1, 8)},
+            **{f"openarmx_right_joint{i}": 0.0 for i in range(1, 8)},
+            "lift_joint": -0.2,
+            "openarmx_head_yaw_joint": 0.0,
+            "openarmx_head_pitch_joint": 0.0,
+            "openarmx_left_finger_joint1": 0.044,
+            "openarmx_right_finger_joint1": 0.0,
+        }
+        step_dt = 1.0 / 30.0
+
+        only_lift = action_from_command(
+            CommandFrame(seq=1, deadman=True, lift_velocity=(0.1,)), current, step_dt=step_dt
+        )
+        self.assertAlmostEqual(only_lift[17], -0.2 + 0.1 * step_dt, places=6)
+
+        with_arm = action_from_command(
+            CommandFrame(
+                seq=2,
+                deadman=True,
+                left_arm_position=(0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4),
+                lift_velocity=(0.1,),
+            ),
+            current,
+            step_dt=step_dt,
+        )
+        self.assertAlmostEqual(with_arm[17], -0.2 + 0.1 * step_dt, places=6)
+
     def test_maps_absolute_ros_joint_targets_to_bounded_relative_arena_actions(self) -> None:
         current = {
             **{f"openarmx_left_joint{i}": 0.0 for i in range(1, 8)},

@@ -92,11 +92,17 @@ def action_from_command(
             action[action_start] = target
         elif command.lift_velocity is not None:
             action_start, _ = ACTION_SLICES["lift_action"]
-            scale = ACTION_SCALES["lift_position"]
+            # 升降动作是**绝对位置**语义（见上一条分支与 openflex_actions 的 lift_action），
+            # 所以这里必须 current + delta；且 current 要在本分支自己取——原来直接复用
+            # 上面臂循环的局部变量，只有 lift_velocity 时抛 UnboundLocalError，
+            # 有臂指令时则把最后一个臂关节的位置当成升降基准。
+            lift_current = float(current_joint_positions[LIFT_JOINTS[0]])
             lift_delta = _finite_clamp(command.lift_velocity[0], -_MAX_SPEEDS["lift"], _MAX_SPEEDS["lift"]) * step_dt
             if abs(lift_delta) < 1.0e-4:
                 lift_delta = 0.0
-            action[action_start] = current + lift_delta
+            action[action_start] = _finite_clamp(
+                lift_current + lift_delta, *JOINT_POSITION_LIMITS[LIFT_JOINTS[0]]
+            )
 
         if command.head_position is not None:
             action_start, _ = ACTION_SLICES["head_action"]

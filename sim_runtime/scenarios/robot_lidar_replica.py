@@ -23,7 +23,7 @@ from isaacsim import SimulationApp
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SENSOR_PACKAGE = ROOT / "ros2_pkgs" / "simulation_bridge" / "sensor_pkg"
+SENSOR_PACKAGE = ROOT / "sim_runtime" / "ros2" / "openflex_isaac_sim" / "openflex_isaac_sensors"
 if str(SENSOR_PACKAGE) not in sys.path:
     sys.path.insert(0, str(SENSOR_PACKAGE))
 
@@ -117,8 +117,8 @@ for _ in range(4):
 carb.settings.get_settings().set("/exts/omni.replicator.srtx/enabled", False)
 carb.settings.get_settings().set("/renderer/multiGpu/enabled", False)
 
-from isaacsim_sensors.integration import create_robot_sensor_suite
-from isaacsim_sensors.mid360 import create_standalone_mid360
+from openflex_isaac_sensors.integration import create_robot_sensor_suite
+from openflex_isaac_sensors.mid360 import create_standalone_mid360
 
 
 def _pace_until(target_ns: int) -> None:

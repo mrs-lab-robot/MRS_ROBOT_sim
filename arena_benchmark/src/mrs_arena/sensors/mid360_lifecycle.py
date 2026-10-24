@@ -462,7 +462,16 @@ class ArenaMid360Runtime:
             spec.loader.exec_module(module)
 
         ros_setup = Path(os.environ.get("ARENA_ROS_SETUP", "/opt/ros/humble/setup.bash"))
-        default_workspace = self._repository_root.parent.parent / "openflex_all/openflex_ws"
+        # 默认工作空间按「仓库的兄弟目录」探测，不再写死 openflex_all 这一层
+        # （本机实际是 MRS_ROBOT/openflex_ws，硬编码会让 Livox relay 必抛 FileNotFoundError）。
+        candidates = [
+            self._repository_root.parent / "openflex_ws",
+            self._repository_root.parent / "openflex_all" / "openflex_ws",
+        ]
+        default_workspace = next(
+            (path for path in candidates if (path / "install" / "setup.bash").is_file()),
+            candidates[0],
+        )
         workspace = Path(
             os.environ.get("OPENFLEX_ROS2_WORKSPACE", str(default_workspace))
         ).expanduser()

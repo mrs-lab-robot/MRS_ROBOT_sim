@@ -21,7 +21,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SENSOR_PACKAGE = ROOT / "ros2_pkgs" / "simulation_bridge" / "sensor_pkg"
+SENSOR_PACKAGE = ROOT / "sim_runtime" / "ros2" / "openflex_isaac_sim" / "openflex_isaac_sensors"
 if str(SENSOR_PACKAGE) not in sys.path:
     sys.path.insert(0, str(SENSOR_PACKAGE))
 
@@ -169,7 +169,7 @@ from isaacsim.core.api import SimulationContext
 from isaacsim.core.prims import Articulation, XFormPrim
 import isaacsim.core.experimental.utils.stage as stage_utils
 from isaacsim.core.rendering_manager import RenderingManager
-from isaacsim_sensors.integration import create_robot_sensor_suite
+from openflex_isaac_sensors.integration import create_robot_sensor_suite
 
 
 def _pace_until(target_ns: int) -> None:
