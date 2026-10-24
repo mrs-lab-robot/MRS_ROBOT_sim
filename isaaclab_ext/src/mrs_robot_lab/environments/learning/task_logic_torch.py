@@ -43,6 +43,57 @@ class BatchedBoxTransportEvaluator:
         self.has_placed = torch.zeros_like(self.has_grasped)
         self.stable_elapsed = torch.zeros(num_envs, dtype=torch.float32, device=self.device)
 
+    def configure(
+        self,
+        *,
+        initial_position: Sequence[float] | torch.Tensor | None = None,
+        target_position: Sequence[float] | torch.Tensor | None = None,
+        position_tolerance_m: float | None = None,
+        min_lift_height_m: float | None = None,
+        min_carry_distance_m: float | None = None,
+        stable_seconds: float | None = None,
+        max_linear_speed_mps: float | None = None,
+    ) -> None:
+        """Re-apply success-criteria parameters without clearing episode progress.
+
+        The training env supplies every parameter once, at construction. The arena
+        benchmark adapter receives them per step (its public signature predates
+        this class), so it re-applies them here instead of keeping a second copy of
+        the state machine. Only the parameters are written: the ``has_*`` history,
+        ``stable_elapsed`` and ``phase`` are untouched, so calling this cannot
+        launder progress. Re-randomised initial poses still belong in :meth:`reset`.
+
+        Positions may be a 3-vector (broadcast to every environment) or a
+        ``(num_envs, 3)`` tensor.
+        """
+
+        if initial_position is not None:
+            self.initial_position = self._position_batch(initial_position, "initial_position")
+        if target_position is not None:
+            self.target_position = self._position_batch(target_position, "target_position")
+        if position_tolerance_m is not None:
+            self.position_tolerance_m = _positive(position_tolerance_m, "position_tolerance_m")
+        if min_lift_height_m is not None:
+            self.min_lift_height_m = _positive(min_lift_height_m, "min_lift_height_m")
+        if min_carry_distance_m is not None:
+            self.min_carry_distance_m = _positive(min_carry_distance_m, "min_carry_distance_m")
+        if stable_seconds is not None:
+            self.stable_seconds = _positive(stable_seconds, "stable_seconds")
+        if max_linear_speed_mps is not None:
+            self.max_linear_speed_mps = _positive(max_linear_speed_mps, "max_linear_speed_mps")
+
+    def _position_batch(self, values: Sequence[float] | torch.Tensor, name: str) -> torch.Tensor:
+        count = self.phase.shape[0]
+        if isinstance(values, torch.Tensor):
+            batch = torch.as_tensor(values, device=self.device, dtype=torch.float32).clone()
+            if batch.shape != (count, 3):
+                raise ValueError(f"{name} must have shape ({count}, 3)")
+        else:
+            batch = _point(values, name, self.device).expand(count, 3).clone()
+        if not bool(torch.isfinite(batch).all().item()):
+            raise ValueError(f"{name} must be finite")
+        return batch
+
     def update(
         self,
         box_position: torch.Tensor,
@@ -77,10 +128,14 @@ class BatchedBoxTransportEvaluator:
 
         released = self.has_placed & ~left_contact & ~right_contact
         stable_speed = torch.linalg.vector_norm(velocity, dim=-1) <= self.max_linear_speed_mps
-        self.stable_elapsed = torch.where(
-            released & at_target & stable_speed,
-            self.stable_elapsed + step,
-            torch.zeros_like(self.stable_elapsed),
+        # 就地写入：arena 的 transport_logic 把这块缓冲区当作它的 state dict 值（别名），
+        # 重新绑定会让外部视图指向旧张量，reset 就静默失效了。
+        self.stable_elapsed.copy_(
+            torch.where(
+                released & at_target & stable_speed,
+                self.stable_elapsed + step,
+                torch.zeros_like(self.stable_elapsed),
+            )
         )
         success = self.stable_elapsed + 1e-6 >= self.stable_seconds
         placed = self.has_placed
