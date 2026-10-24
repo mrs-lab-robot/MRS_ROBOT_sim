@@ -56,7 +56,9 @@ class CaptureControlServerTest(unittest.TestCase):
     def test_public_api_uses_session_and_episode_paths(self) -> None:
         self.assertEqual(COMMAND_PATHS["/api/v1/episode/start"], "start")
         self.assertEqual(COMMAND_PATHS["/api/v1/episode/save"], "save")
-        self.assertEqual(COMMAND_PATHS["/api/v1/episode/export"], "export")
+        # 导出改走 CLI（arena_benchmark/scripts/export_arena_hdf5_to_lerobot.py），
+        # capture API 不再提供 /episode/export —— 这里断言它确实不存在。
+        self.assertNotIn("/api/v1/episode/export", COMMAND_PATHS)
         self.assertEqual(COMMAND_PATHS["/api/v1/episode/discard"], "discard")
         self.assertEqual(COMMAND_PATHS["/api/v1/environment/reset"], "reset")
         self.assertEqual(COMMAND_PATHS["/api/v1/session/stop"], "stop")

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from mrs_robot_lab.adapters.teleop_adapter import action_from_command, joint_targets_from_action
+from mrs_robot_lab.adapters.teleop_adapter import (
+    _MAX_SPEEDS,
+    action_from_command,
+    joint_targets_from_action,
+)
+from mrs_robot_lab.assets.robot_interface import ACTION_SCALES
 from mrs_teleoperation.protocol import CommandFrame
 
 
@@ -20,7 +25,8 @@ class TeleopActionMapperTest(unittest.TestCase):
         command = CommandFrame(
             seq=1,
             deadman=True,
-            left_arm_position=(0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            # 0.9 rad：joint1 机械上限 0.9056 内，且远超单步限速，才能验证「被限速截断」
+            left_arm_position=(0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             right_arm_position=(0.0,) * 7,
             lift_velocity=(0.1,),
             lift_position=(0.001,),
@@ -32,9 +38,15 @@ class TeleopActionMapperTest(unittest.TestCase):
         action = action_from_command(command, current, step_dt=1.0 / 15.0)
 
         self.assertEqual(len(action), 22)
-        self.assertAlmostEqual(action[3], 0.0933333333, places=6)  # 0.35 rad/s * dt / 0.25 scale
-        self.assertAlmostEqual(action[17], 0.02, places=6)  # absolute lift target takes priority over jog velocity
-        self.assertAlmostEqual(action[18], 0.2222222222, places=6)  # 0.5 rad/s * dt / 0.15 scale
+        # 期望值从限速常量推出来，避免调速度后测试假红（曾写死 0.35 rad/s）。
+        self.assertAlmostEqual(
+            action[3], _MAX_SPEEDS["arm"] * (1.0 / 15.0) / ACTION_SCALES["left_arm_position"], places=6
+        )
+        # 升降是绝对位置语义：直接下发目标米值，不乘 scale（旧断言 0.02 是乘了 0.05 的结果）
+        self.assertAlmostEqual(action[17], 0.001, places=6)
+        self.assertAlmostEqual(
+            action[18], _MAX_SPEEDS["head"] * (1.0 / 15.0) / ACTION_SCALES["head_position"], places=6
+        )
         self.assertEqual(action[20], -1.0)  # close left finger
         self.assertEqual(action[21], 1.0)  # open right finger
 
@@ -77,7 +89,8 @@ class TeleopActionMapperTest(unittest.TestCase):
         command = CommandFrame(
             seq=1,
             deadman=True,
-            left_arm_position=(0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            # 0.9 rad：joint1 机械上限 0.9056 内，且远超单步限速，才能验证「被限速截断」
+            left_arm_position=(0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             lift_position=(0.001,),
             left_gripper_position=(0.044,),
         )
@@ -85,7 +98,9 @@ class TeleopActionMapperTest(unittest.TestCase):
 
         targets = joint_targets_from_action(action, current)
 
-        self.assertAlmostEqual(targets["openarmx_left_joint1"], 0.35 / 15.0)
+        self.assertAlmostEqual(
+            targets["openarmx_left_joint1"], _MAX_SPEEDS["arm"] / 15.0
+        )
         self.assertAlmostEqual(targets["lift_joint"], 0.001)
         self.assertAlmostEqual(targets["openarmx_left_finger_joint1"], 0.044)
 

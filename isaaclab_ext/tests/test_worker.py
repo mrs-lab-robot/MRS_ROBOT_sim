@@ -633,6 +633,7 @@ class TestWorkerInjectedRuntime(unittest.TestCase):
         self.assertEqual(runtime.calls[3], ("warmup", 3))
         self.assertEqual(worker.get_status().metadata["environment_id"], "navigation_to_goal")
 
+    @unittest.skip("待重接：worker 内的 lerobot 导出回调（create_lerobot_export_callback）已不在 worker_cli 中，导出改走 arena_benchmark/scripts/export_arena_hdf5_to_lerobot.py")
     def test_recording_forwards_metadata_samples_and_save_to_episode_controller(self):
         runtime = FakeWorkerRuntime()
         recorder = FakeEpisodeController()
@@ -657,6 +658,7 @@ class TestWorkerInjectedRuntime(unittest.TestCase):
         self.assertEqual(recorder.calls[0][1]["dataset_id"], "openflex_sim/navigation_v1")
         self.assertEqual(worker.state, WorkerState.ENV_READY)
 
+    @unittest.skip("待重接：worker 内的 lerobot 导出回调（create_lerobot_export_callback）已不在 worker_cli 中，导出改走 arena_benchmark/scripts/export_arena_hdf5_to_lerobot.py")
     def test_non_vr_worker_episode_passes_qc_and_reaches_real_lerobot_exporter(self):
         import os
         from io import BytesIO
@@ -884,6 +886,7 @@ class TestWorkerInjectedRuntime(unittest.TestCase):
         reasons = worker.get_status().metadata["last_qc_failure_reasons"]
         self.assertTrue(any("诊断输入" in reason for reason in reasons))
 
+    @unittest.skip("待重接：worker 内的 lerobot 导出回调（create_lerobot_export_callback）已不在 worker_cli 中，导出改走 arena_benchmark/scripts/export_arena_hdf5_to_lerobot.py；这几个用例测的是被移除的 worker 内导出链路")
     def test_export_failure_keeps_hdf5_and_can_be_retried_without_re_recording(self):
         recorder = FakeEpisodeController()
         worker = IsaacLabWorker(

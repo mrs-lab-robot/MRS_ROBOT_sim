@@ -145,10 +145,10 @@ def joint_targets_from_action(
         raise ValueError("actions must contain only finite values")
 
     targets: dict[str, float] = {}
+    # 双臂/头是「相对增量 × scale」语义
     for term, contract_term in (
         ("left_arm_action", "left_arm_position"),
         ("right_arm_action", "right_arm_position"),
-        ("lift_action", "lift_position"),
         ("head_action", "head_position"),
     ):
         start, width = ACTION_SLICES[term]
@@ -156,6 +156,15 @@ def joint_targets_from_action(
         for offset, joint_name in enumerate(ACTION_JOINTS_BY_TERM[term]):
             target = float(current_joint_positions[joint_name]) + float(action[start + offset]) * scale
             targets[joint_name] = _finite_clamp(target, *JOINT_POSITION_LIMITS[joint_name])
+
+    # 升降是**绝对位置**语义（见 action_from_command 里的升降分支：直接写目标米值，
+    # 不再乘 scale、也不累加当前值）。这里以前跟相对动作一起乘了 0.05，
+    # 导致下游（teleop_ros_robot / mimic 标注）拿到的升降目标小 20 倍。
+    lift_start, _lift_width = ACTION_SLICES["lift_action"]
+    lift_joint = ACTION_JOINTS_BY_TERM["lift_action"][0]
+    targets[lift_joint] = _finite_clamp(
+        float(action[lift_start]), *JOINT_POSITION_LIMITS[lift_joint]
+    )
 
     for term in ("left_gripper_action", "right_gripper_action"):
         start, _width = ACTION_SLICES[term]

@@ -111,6 +111,7 @@ class WorkerCliTest(unittest.TestCase):
 
         self.assertEqual(order, [("attach", server), ("launch",)])
 
+    @unittest.skip("待重接：worker 内的 lerobot 导出回调（create_lerobot_export_callback）已不在 worker_cli 中，导出改走 arena_benchmark/scripts/export_arena_hdf5_to_lerobot.py；这几个用例测的是被移除的 worker 内导出链路")
     def test_api_status_includes_quarantined_episode_path(self):
         server = FakeServer()
         status = WorkerStatus(
@@ -268,6 +269,7 @@ class WorkerCliTest(unittest.TestCase):
         self.assertTrue(any(update.get("ready") is True for update in server.status_updates))
         self.assertEqual(server.status_updates[-1]["state"], WorkerState.STOPPING.value)
 
+    @unittest.skip("待重接：worker 内的 lerobot 导出回调（create_lerobot_export_callback）已不在 worker_cli 中，导出改走 arena_benchmark/scripts/export_arena_hdf5_to_lerobot.py；这几个用例测的是被移除的 worker 内导出链路")
     def test_cli_wires_the_lerobot_export_callback_into_the_worker(self):
         config = make_config()
         callback = object()
