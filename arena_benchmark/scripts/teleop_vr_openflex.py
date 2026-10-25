@@ -622,15 +622,18 @@ def main() -> None:
                 active=bool(args.enable_cameras),
             )
         sensor_preparation_error = ""
-        try:
-            sensor_runtime.prepare_sensors()
-        except Exception as error:
-            sensor_preparation_error = str(error)
-            print(
-                f"ARENA_SENSOR_PREPARE_ERROR {sensor_preparation_error}",
-                file=sys.stderr,
-                flush=True,
-            )
+        # 只有真要建雷达/IMU 时才需要 ROS2 bridge 扩展；不建雷达时无条件准备会白等
+        # 10 秒并打印 ARENA_SENSOR_PREPARE_ERROR，把正常启动伪装成失败。
+        if args.enable_lidar:
+            try:
+                sensor_runtime.prepare_sensors()
+            except Exception as error:
+                sensor_preparation_error = str(error)
+                print(
+                    f"ARENA_SENSOR_PREPARE_ERROR {sensor_preparation_error}",
+                    file=sys.stderr,
+                    flush=True,
+                )
         sensor_manager.mark_ready(error=sensor_preparation_error)
         sensor_api = ArenaSensorControlServer(sensor_manager, host="127.0.0.1", port=8086)
         sensor_api.start()
