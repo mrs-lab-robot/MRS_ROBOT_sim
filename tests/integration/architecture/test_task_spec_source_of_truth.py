@@ -74,6 +74,40 @@ class TaskSpecIsSourceOfTruthTest(unittest.TestCase):
         self.assertEqual(task.randomization().xy_m, 0.0)
         self.assertIsNone(task.get_mimic_env_cfg(None))
 
+    def test_box_task_parameters_come_from_yaml(self) -> None:
+        """搬箱任务的阈值也必须来自 YAML（原来全写在 Python 常量里）。"""
+
+        from openflex_isaac_contract.task_spec import load_task_spec
+
+        from mrs_arena.tasks.box_transport_spec import box_transport_parameters_from_task
+
+        parameters = box_transport_parameters_from_task(load_task_spec(BOX_TASK))
+        self.assertEqual(parameters.initial_position, (0.65, 0.0, 0.80))
+        self.assertEqual(parameters.target_position, (0.90, 0.0, 0.80))
+        self.assertAlmostEqual(parameters.min_lift_height_m, 0.10)
+        self.assertAlmostEqual(parameters.min_carry_distance_m, 0.20)
+        self.assertAlmostEqual(parameters.position_tolerance_m, 0.05)
+        self.assertAlmostEqual(parameters.episode_length_s, 60.0)
+        self.assertAlmostEqual(parameters.box_randomization_xy_m, 0.02)
+        self.assertAlmostEqual(parameters.box_randomization_yaw_rad, 0.10)
+
+        def mutate(spec):
+            spec["success_criteria"][0]["params"].update(
+                min_lift_height=0.15, target_position=[0.95, 0.02, 0.80]
+            )
+            spec["episode_length_s"] = 45.0
+
+        with tempfile.TemporaryDirectory() as temporary:
+            moved = _write_modified(BOX_TASK, Path(temporary), mutate)
+            moved_parameters = box_transport_parameters_from_task(load_task_spec(moved))
+
+        self.assertAlmostEqual(moved_parameters.min_lift_height_m, 0.15)
+        self.assertEqual(moved_parameters.target_position, (0.95, 0.02, 0.80))
+        self.assertAlmostEqual(moved_parameters.episode_length_s, 45.0)
+        self.assertNotEqual(
+            moved_parameters.min_lift_height_m, parameters.min_lift_height_m
+        )
+
     def test_template_files_are_not_registered_as_real_tasks(self) -> None:
         """模板不能被当成真任务跑起来（文件名下划线开头 + registry 是显式列表）。"""
 

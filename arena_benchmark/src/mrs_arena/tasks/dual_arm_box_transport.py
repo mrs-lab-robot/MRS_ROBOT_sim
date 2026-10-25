@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import MISSING
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -24,6 +25,11 @@ from isaaclab_arena.utils.configclass import make_configclass
 from isaaclab_arena.utils.pose import Pose
 
 from mrs_robot_lab.assets.asset_resolver import AssetResolver
+from mrs_arena.tasks.box_transport_spec import (
+    BoxTransportParameters,
+    box_transport_parameters_from_task,
+    default_box_transport_task_path,
+)
 from mrs_arena.tasks.transport_logic import (
     create_transport_progress_state,
     update_transport_progress,
@@ -69,16 +75,73 @@ class DualArmBoxTransportTask(TaskBase):
     def __init__(
         self,
         *,
-        episode_length_s: float = 60.0,
-        initial_position: tuple[float, float, float] = TASK_INITIAL_BOX_POSITION,
-        target_position: tuple[float, float, float] = TASK_TARGET_BOX_POSITION,
-        min_lift_height_m: float = 0.10,
-        min_carry_distance_m: float = 0.20,
-        position_tolerance_m: float = 0.05,
-        max_linear_speed_mps: float = 0.02,
-        stable_seconds: float = 1.0,
+        runtime_configuration: Any | None = None,
+        task_spec_path: str | Path | None = None,
+        scene_spec_path: str | Path | None = None,
+        episode_length_s: float | None = None,
+        initial_position: tuple[float, float, float] | None = None,
+        target_position: tuple[float, float, float] | None = None,
+        min_lift_height_m: float | None = None,
+        min_carry_distance_m: float | None = None,
+        position_tolerance_m: float | None = None,
+        max_linear_speed_mps: float | None = None,
+        stable_seconds: float | None = None,
         contact_force_threshold_n: float = CONTACT_FORCE_THRESHOLD_N,
     ):
+        # 参数唯一来源是 task YAML：显式入参 > YAML > 仓库默认值。
+        # 这样「改 YAML 生效」才是真的，训练/评测也不会各跑一套分布。
+        if runtime_configuration is None:
+            spec_path = Path(task_spec_path) if task_spec_path else default_box_transport_task_path()
+            if spec_path.is_file():
+                from mrs_robot_lab.environments.learning.configuration import load_task_configuration
+
+                runtime_configuration = load_task_configuration(
+                    spec_path,
+                    scene_spec_path=scene_spec_path,
+                    backend="arena",
+                )
+        self.runtime_configuration = runtime_configuration
+        self.parameters = (
+            box_transport_parameters_from_task(runtime_configuration.task)
+            if runtime_configuration is not None
+            else None
+        )
+
+        def resolve(explicit, spec_value, fallback):
+            if explicit is not None:
+                return explicit
+            return spec_value if spec_value is not None else fallback
+
+        parameters = self.parameters
+        episode_length_s = resolve(
+            episode_length_s, parameters.episode_length_s if parameters else None, 60.0
+        )
+        initial_position = resolve(
+            initial_position,
+            parameters.initial_position if parameters else None,
+            TASK_INITIAL_BOX_POSITION,
+        )
+        target_position = resolve(
+            target_position,
+            parameters.target_position if parameters else None,
+            TASK_TARGET_BOX_POSITION,
+        )
+        min_lift_height_m = resolve(
+            min_lift_height_m, parameters.min_lift_height_m if parameters else None, 0.10
+        )
+        min_carry_distance_m = resolve(
+            min_carry_distance_m, parameters.min_carry_distance_m if parameters else None, 0.20
+        )
+        position_tolerance_m = resolve(
+            position_tolerance_m, parameters.position_tolerance_m if parameters else None, 0.05
+        )
+        max_linear_speed_mps = resolve(
+            max_linear_speed_mps, parameters.max_linear_speed_mps if parameters else None, 0.02
+        )
+        stable_seconds = resolve(
+            stable_seconds, parameters.stable_seconds if parameters else None, 1.0
+        )
+
         super().__init__(
             episode_length_s=episode_length_s,
             task_description=(
