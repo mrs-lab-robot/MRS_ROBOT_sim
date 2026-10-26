@@ -35,8 +35,19 @@ def _require_port_free(port: int, bind_host: str, label: str) -> None:
 
 # relay_node 依赖 mrs_teleoperation（只在 sim_runtime/teleoperation/src 里，
 # 没装进 ROS 的 python3.10）；不注入 PYTHONPATH 时 relay 启动即报
-# ModuleNotFoundError: No module named 'mrs_teleoperation'。
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# ModuleNotFoundError: No module named 'mrs_teleoperation'，随后 relay 进程死掉，
+# /joint_states、/cmd_vel、/cam_* 全部消失（机器人不动、相机流打不开）。
+# 注意：这个 launch 位于 sim_runtime/ros2/<pkg>/launch，parents[3] 是 sim_runtime
+# 而不是仓库根，写死层级会在目录调整后失效；改成向上找到含
+# sim_runtime/teleoperation/src 的那一层。
+def _find_repo_root() -> Path:
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "sim_runtime" / "teleoperation" / "src").is_dir():
+            return candidate
+    return Path(__file__).resolve().parents[4]
+
+
+_REPO_ROOT = _find_repo_root()
 _TELEOP_SRC = _REPO_ROOT / "sim_runtime" / "teleoperation" / "src"
 _RELAY_ENV = {
     "PYTHONPATH": os.pathsep.join(
